@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Bot Telegram — surveillance des nouvelles paires $VIRTUAL sur Base.
-"""
-
 import json
 import logging
 import os
@@ -21,19 +17,14 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_MINUTES", "5"))
-VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "5000"))
-PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "2"))
-STATE_FILE = Path(os.getenv("STATE_FILE", "seen_tokens.json"))
-DESC_MAX_LEN = 300
+POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_MINUTES", "2"))
+VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "1000"))
+STATE_FILE = Path(os.getenv("STATE_FILE", "seen_tokens_dex.json"))
 
 VIRTUAL_TOKEN_ADDRESS = "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b"
-
-GECKOTERMINAL_NEW_POOLS_URL = "https://api.geckoterminal.com/api/v2/networks/base/new_pools"
-VIRTUALS_LOOKUP_URL = "https://api.virtuals.io/api/virtuals"
+DEXSCREENER_URL = f"https://api.dexscreener.com/token-pairs/v1/base/{VIRTUAL_TOKEN_ADDRESS}"
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
-REQUEST_PAUSE_S = 1.0
 TELEGRAM_PAUSE_S = 1.0
 
 logging.basicConfig(
@@ -56,7 +47,7 @@ def build_session():
     session.mount("https://", adapter)
     session.headers.update(
         {
-            "User-Agent": "virtuals-monitor-bot/2.0",
+            "User-Agent": "virtuals-monitor-bot/3.0",
             "Accept": "application/json",
         }
     )
@@ -75,98 +66,59 @@ def safe_float(value, default=0.0):
 def safe_str(value, default=""):
     return value if isinstance(value, str) else default
 
-def fetch_new_pools_page(page):
-    params = {"include": "base_token,quote_token", "page": page}
-    resp = SESSION.get(GECKOTERMINAL_NEW_POOLS_URL, params=params, timeout=20)
-    resp.raise_for_status()
-
-    payload = resp.json()
-    pools = payload.get("data")
-    if not isinstance(pools, list):
-        raise ValueError(f"Réponse GeckoTerminal inattendue (page {page})")
-
-    included = payload.get("included") or []
-    token_lookup = {
-        item["id"]: item.get("attributes", {})
-        for item in included
-        if isinstance(item, dict) and item.get("type") == "token" and "id" in item
-    }
-    return [p for p in pools if isinstance(p, dict)], token_lookup
-
-def extract_agent_side(pool, token_lookup):
-    rels = pool.get("relationships", {})
-    base_id = (rels.get("base_token") or {}).get("data", {}).get("id")
-    quote_id = (rels.get("quote_token") or {}).get("data", {}).get("id")
-
-    base_attrs = token_lookup.get(base_id, {})
-    quote_attrs = token_lookup.get(quote_id, {})
-
-    base_symbol = safe_str(base_attrs.get("symbol")).upper()
-    quote_symbol = safe_str(quote_attrs.get("symbol")).upper()
-
-    log.info(f"DEBUG: base={base_symbol}, quote={quote_symbol}")
-
-    if base_symbol == "VIRTUAL":
-        agent_attrs = quote_attrs
-    elif quote_symbol == "VIRTUAL":
-        agent_attrs = base_attrs
-    else:
-        return None
-    addr = safe_str(agent_attrs.get("address"))
-    if not addr:
-        return None
-
-    attrs = pool.get("attributes", {})
-    volume = safe_float((attrs.get("volume_usd") or {}).get("h24"))
-    mcap_raw = attrs.get("market_cap_usd")
-    mcap = safe_float(mcap_raw) if mcap_raw is not None else attrs.get("fdv_usd")
-    mcap = safe_float(mcap) if mcap is not None else None
-
-    return {
-        "tokenAddress": addr,
-        "name": safe_str(agent_attrs.get("name")) or safe_str(attrs.get("name")),
-        "symbol": safe_str(agent_attrs.get("symbol")),
-        "volume24h": volume,
-        "mcapUsd": mcap,
-        "createdAt": safe_str(attrs.get("pool_created_at")),
-        "poolAddress": safe_str(attrs.get("address")),
-    }
-def fetch_new_virtual_pairs():
-    seen_this_scan = set()
-    results = []
-    for page in range(1, PAGES_TO_SCAN + 1):
-        try:
-            pools, token_lookup = fetch_new_pools_page(page)
-        except Exception as exc:
-            log.error("Échec récupération new_pools page %d : %s", page, exc)
-            break
-        for pool in pools:
-            agent = extract_agent_side(pool, token_lookup)
-            if agent and agent["tokenAddress"].lower() not in seen_this_scan:
-                seen_this_scan.add(agent["tokenAddress"].lower())
-                results.append(agent)
-        if len(pools) < 20:
-            break
-        time.sleep(REQUEST_PAUSE_S)
-    return results
-
-def try_enrich_from_virtuals_api(token_address):
+def fetch_virtual_pairs():
     try:
-        resp = SESSION.get(
-            VIRTUALS_LOOKUP_URL,
-            params={"filters[tokenAddress][$eq]": token_address},
-            timeout=10,
-        )
+        resp = SESSION.get(DEXSCREENER_URL, timeout=20)
         resp.raise_for_status()
-        data = resp.json().get("data")
-        if not isinstance(data, list):
-            return None
-        for entry in data:
-            if safe_str(entry.get("tokenAddress")).lower() == token_address.lower():
-                return entry
+        data = resp.json()
     except Exception as exc:
-        log.debug("Enrichissement Virtuals API échoué pour %s : %s", token_address, exc)
-    return None
+        log.error("Échec récupération DexScreener : %s", exc)
+        return []
+
+    if not isinstance(data, list):
+        log.error("Réponse DexScreener inattendue.")
+        return []
+
+    results = []
+    for pair in data:
+        if not isinstance(pair, dict):
+            continue
+
+        base = pair.get("baseToken", {}) or {}
+        quote = pair.get("quoteToken", {}) or {}
+
+        base_symbol = safe_str(base.get("symbol")).upper()
+        quote_symbol = safe_str(quote.get("symbol")).upper()
+
+        if base_symbol == "VIRTUAL":
+            agent = quote
+        elif quote_symbol == "VIRTUAL":
+            agent = base
+        else:
+            continue
+
+        addr = safe_str(agent.get("address"))
+        if not addr:
+            continue
+
+        volume = safe_float((pair.get("volume") or {}).get("h24"))
+        mcap = pair.get("marketCap")
+        mcap = safe_float(mcap) if mcap is not None else pair.get("fdv")
+        mcap = safe_float(mcap) if mcap is not None else None
+
+        results.append(
+            {
+                "tokenAddress": addr,
+                "name": safe_str(agent.get("name")),
+                "symbol": safe_str(agent.get("symbol")),
+                "volume24h": volume,
+                "mcapUsd": mcap,
+                "createdAt": pair.get("pairCreatedAt"),
+                "url": safe_str(pair.get("url")),
+            }
+        )
+
+    return results
 
 def load_state():
     if STATE_FILE.exists():
@@ -196,34 +148,18 @@ def format_usd(value):
         return "N/A"
     return f"{value:,.0f}".replace(",", " ")
 
-def build_message(agent, virtuals_data):
+def build_message(agent):
     name = escape_markdown(safe_str(agent.get("name"), "?"))
     ticker = escape_markdown(safe_str(agent.get("symbol"), "?"))
     volume = agent.get("volume24h", 0.0)
     mcap = agent.get("mcapUsd")
     ca = agent.get("tokenAddress", "N/A")
-
-    if virtuals_data:
-        desc = safe_str(virtuals_data.get("description")).strip().replace("\n", " ")
-        if len(desc) > DESC_MAX_LEN:
-            desc = desc[: DESC_MAX_LEN - 1].rstrip() + "…"
-        desc = escape_markdown(desc) or "_(pas de description)_"
-        vid = virtuals_data.get("id")
-        link = (
-            f"https://app.virtuals.io/virtuals/{vid}"
-            if vid else f"https://www.geckoterminal.com/base/pools/{agent.get('poolAddress', '')}"
-        )
-        name = escape_markdown(safe_str(virtuals_data.get("name")) or agent.get("name", "?"))
-        ticker = escape_markdown(safe_str(virtuals_data.get("symbol")) or agent.get("symbol", "?"))
-    else:
-        desc = "_Description indisponible (agent non trouvé sur l'API Virtuals)_"
-        link = f"https://www.geckoterminal.com/base/pools/{agent.get('poolAddress', '')}"
+    link = agent.get("url") or f"https://dexscreener.com/base/{ca}"
 
     return (
         f"🆕 *{name}* (${ticker})\n"
         f"💧 Volume 24h : {format_usd(volume)}$\n"
         f"📊 Market cap : {format_usd(mcap)}$\n"
-        f"🧠 {desc}\n"
         f"🔗 CA : `{ca}`\n"
         f"👉 {link}"
     )
@@ -249,19 +185,19 @@ def send_telegram(text):
         return False
 
 def run_cycle(state):
-    agents = fetch_new_virtual_pairs()
+    agents = fetch_virtual_pairs()
     if not agents:
-        log.warning("Aucune nouvelle pool $VIRTUAL récupérée ce cycle.")
+        log.warning("Aucune paire $VIRTUAL récupérée ce cycle.")
         return
 
     seen = state["seen"]
 
     if not state.get("initialized"):
         for agent in agents:
-            seen[agent["tokenAddress"].lower()] = agent.get("createdAt") or time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            seen[agent["tokenAddress"].lower()] = str(agent.get("createdAt") or time.time())
         state["initialized"] = True
         save_state(state)
-        log.info("Initialisation : %d paires marquées comme déjà vues.", len(seen))
+        log.info("Initialisation : %d paires $VIRTUAL marquées comme déjà vues.", len(seen))
         return
 
     alerts = 0
@@ -272,19 +208,21 @@ def run_cycle(state):
 
         volume = agent.get("volume24h", 0.0)
         if volume > VOLUME_THRESHOLD_USD:
-            virtuals_data = try_enrich_from_virtuals_api(agent["tokenAddress"])
-            message = build_message(agent, virtuals_data)
+            message = build_message(agent)
             if send_telegram(message):
-                seen[key] = agent.get("createdAt") or time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                seen[key] = str(agent.get("createdAt") or time.time())
                 alerts += 1
                 log.info("Alerte envoyée : %s ($%s) vol=%.0f$", agent.get("name"), agent.get("symbol"), volume)
                 save_state(state)
                 time.sleep(TELEGRAM_PAUSE_S)
             else:
-                log.error("Alerte NON envoyée pour %s — retentera au prochain cycle.", agent.get("name"))
+                log.error("Alerte NON envoyée pour %s", agent.get("name"))
+        else:
+            seen[key] = str(agent.get("createdAt") or time.time())
 
     if alerts == 0:
-        log.info("Cycle terminé : %d paires scannées.", len(agents))
+        log.info("Cycle terminé : %d paires $VIRTUAL scannées.", len(agents))
+    save_state(state)
 
 def main():
     if not BOT_TOKEN or not CHAT_ID:
@@ -299,11 +237,8 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown)
 
     state = load_state()
-    interval_s = max(60.0, POLL_INTERVAL_MINUTES * 60)
-    log.info(
-        "Démarrage — polling toutes les %.0f min, seuil %.0f$.",
-        interval_s / 60, VOLUME_THRESHOLD_USD,
-    )
+    interval_s = max(30.0, POLL_INTERVAL_MINUTES * 60)
+    log.info("Démarrage (DexScreener) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
 
     while True:
         try:
