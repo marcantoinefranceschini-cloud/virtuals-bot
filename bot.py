@@ -101,13 +101,15 @@ def extract_agent_side(pool, token_lookup):
     base_attrs = token_lookup.get(base_id, {})
     quote_attrs = token_lookup.get(quote_id, {})
 
-    base_addr = safe_str(base_attrs.get("address")).lower()
-    quote_addr = safe_str(quote_attrs.get("address")).lower()
+    base_symbol = safe_str(base_attrs.get("symbol")).upper()
+quote_symbol = safe_str(quote_attrs.get("symbol")).upper()
 
-    agent_attrs = base_attrs if safe_str(base_attrs.get("symbol")) else quote_attrs
-    addr = safe_str(agent_attrs.get("address"))
-    if not addr:
-        return None
+if base_symbol == "VIRTUAL":
+    agent_attrs = quote_attrs
+elif quote_symbol == "VIRTUAL":
+    agent_attrs = base_attrs
+else:
+    return None
 
     attrs = pool.get("attributes", {})
     volume = safe_float((attrs.get("volume_usd") or {}).get("h24"))
