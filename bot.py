@@ -103,7 +103,9 @@ def extract_agent_side(pool, token_lookup):
 
     base_symbol = safe_str(base_attrs.get("symbol")).upper()
     quote_symbol = safe_str(quote_attrs.get("symbol")).upper()
-
+    
+log.info(f"DEBUG: base={base_symbol}, quote={quote_symbol}")
+    
     if base_symbol == "VIRTUAL":
         agent_attrs = quote_attrs
     elif quote_symbol == "VIRTUAL":
