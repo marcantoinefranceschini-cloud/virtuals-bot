@@ -207,7 +207,8 @@ def run_cycle(state):
             continue
 
         volume = agent.get("volume24h", 0.0)
-        if volume > VOLUME_THRESHOLD_USD:
+        log.info(f"DEBUG: {agent.get('symbol')} vol={volume}")
+        if volume >= VOLUME_THRESHOLD_USD:
             message = build_message(agent)
             if send_telegram(message):
                 seen[key] = str(agent.get("createdAt") or time.time())
