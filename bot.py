@@ -102,14 +102,18 @@ def extract_agent_side(pool, token_lookup):
     quote_attrs = token_lookup.get(quote_id, {})
 
     base_symbol = safe_str(base_attrs.get("symbol")).upper()
-quote_symbol = safe_str(quote_attrs.get("symbol")).upper()
+    quote_symbol = safe_str(quote_attrs.get("symbol")).upper()
 
-if base_symbol == "VIRTUAL":
-    agent_attrs = quote_attrs
-elif quote_symbol == "VIRTUAL":
-    agent_attrs = base_attrs
-else:
-    return None
+    if base_symbol == "VIRTUAL":
+        agent_attrs = quote_attrs
+    elif quote_symbol == "VIRTUAL":
+        agent_attrs = base_attrs
+    else:
+        return None
+
+    addr = safe_str(agent_attrs.get("address"))
+    if not addr:
+        return None
 
     attrs = pool.get("attributes", {})
     volume = safe_float((attrs.get("volume_usd") or {}).get("h24"))
@@ -126,7 +130,6 @@ else:
         "createdAt": safe_str(attrs.get("pool_created_at")),
         "poolAddress": safe_str(attrs.get("address")),
     }
-
 def fetch_new_virtual_pairs():
     seen_this_scan = set()
     results = []
