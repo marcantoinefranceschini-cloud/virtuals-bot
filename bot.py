@@ -104,13 +104,7 @@ def extract_agent_side(pool, token_lookup):
     base_addr = safe_str(base_attrs.get("address")).lower()
     quote_addr = safe_str(quote_attrs.get("address")).lower()
 
-    if base_addr == VIRTUAL_TOKEN_ADDRESS:
-        agent_attrs = quote_attrs
-    elif quote_addr == VIRTUAL_TOKEN_ADDRESS:
-        agent_attrs = base_attrs
-    else:
-        return None
-
+    agent_attrs = base_attrs if safe_str(base_attrs.get("symbol")) else quote_attrs
     addr = safe_str(agent_attrs.get("address"))
     if not addr:
         return None
