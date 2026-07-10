@@ -408,7 +408,7 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    load_users()
+        load_users()
         state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     
