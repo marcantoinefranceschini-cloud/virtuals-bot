@@ -339,6 +339,11 @@ def main():
     log.info("Démarrage (API Virtuals Multi-User) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
     log.info("Users actuels : %d", len(load_users()))
 
+    # Initialiser les fichiers
+    if not USERS_FILE.exists():
+        USERS_FILE.write_text("[]", encoding="utf-8")
+        log.info("Fichier users.json créé.")
+
     import threading
     tg_thread = threading.Thread(target=process_telegram_updates, daemon=True)
     tg_thread.start()
