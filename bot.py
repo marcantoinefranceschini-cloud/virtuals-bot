@@ -60,53 +60,59 @@ def build_session():
     return session
 
 SESSION = build_session()
-# Users storage
-active_users = []
-
-def load_users():
-    """Load users from JSON file"""
-    global active_users
-    try:
-        if USERS_FILE.exists():
-            active_users = json.loads(USERS_FILE.read_text(encoding="utf-8"))
-            log.info(f"✅ Loaded {len(active_users)} users from JSON")
-        else:
-            active_users = []
-    except Exception as e:
-        log.error(f"Error loading users: {e}")
-        active_users = []
-
-def save_users():
-    """Save users to JSON file"""
-    global active_users
-    try:
-        USERS_FILE.write_text(json.dumps(active_users, indent=2), encoding="utf-8")
-    except Exception as e:
-        log.error(f"Error saving users: {e}")
-
-def add_user(chat_id):
-    """Add user to list"""
-    global active_users
-    if chat_id not in active_users:
-        active_users.append(chat_id)
-        save_users()
-        log.info(f"✅ User {chat_id} added")
-        return True
-    return False
-
-def remove_user(chat_id):
-    """Remove user from list"""
-    global active_users
-    if chat_id in active_users:
-        active_users.remove(chat_id)
-        save_users()
-        log.info(f"✅ User {chat_id} removed")
-        return True
-    return False
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 def get_active_users():
-    """Get list of active users"""
-    return active_users
+    """Get users from Supabase"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return []
+    try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/users?select=chat_id",
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        )
+        if resp.status_code == 200:
+            return [row["chat_id"] for row in resp.json()]
+    except Exception as e:
+        log.error(f"Error getting users: {e}")
+    return []
+
+def add_user(chat_id):
+    """Add user to Supabase"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False
+    try:
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/users",
+            json={"chat_id": chat_id},
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+        )
+        log.info(f"✅ User {chat_id} added")
+        return True
+    except Exception as e:
+        log.error(f"Error adding user: {e}")
+        return False
+
+def remove_user(chat_id):
+    """Remove user from Supabase"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False
+    try:
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/users?chat_id=eq.{chat_id}",
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        )
+        log.info(f"✅ User {chat_id} removed")
+        return True
+    except Exception as e:
+        log.error(f"Error removing user: {e}")
+        return False
+
+def load_users():
+    """Load users from Supabase"""
+    return get_active_users()
+
 
 def record_alert(token_name, token_symbol):
     """Record alert"""
@@ -114,7 +120,7 @@ def record_alert(token_name, token_symbol):
 
 def get_stats():
     """Get bot statistics"""
-    return {"today": 0, "total": 0, "users": len(active_users)}
+    return {"today": 0, "total": 0, "users": len(get_active_users())}
 
 
 def safe_float(value, default=0.0):
