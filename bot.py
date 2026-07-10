@@ -120,21 +120,31 @@ def get_stats():
     if not supabase:
         return {"today": 0, "total": 0, "users": 0}
     try:
-        # Alerts today
-        resp_today = supabase.table('alerts').select('id', count='exact').gte('created_at', 'now()::date').execute()
-        today = resp_today.count or 0
-        
         # Total alerts
         resp_total = supabase.table('alerts').select('id', count='exact').execute()
         total = resp_total.count or 0
         
+        # Alerts today (simple approach - get all and filter in Python)
+        resp_alerts = supabase.table('alerts').select('created_at').execute()
+        today_count = 0
+        if resp_alerts.data:
+            from datetime import datetime, date
+            today = date.today()
+            for alert in resp_alerts.data:
+                alert_date = alert.get('created_at')
+                if alert_date:
+                    alert_date_obj = datetime.fromisoformat(alert_date.replace('Z', '+00:00')).date()
+                    if alert_date_obj == today:
+                        today_count += 1
+        
         # Active users
         users_count = len(get_active_users())
         
-        return {"today": today, "total": total, "users": users_count}
+        return {"today": today_count, "total": total, "users": users_count}
     except Exception as e:
         log.error(f"Error getting stats: {e}")
         return {"today": 0, "total": 0, "users": 0}
+
 
 # ============= UTILITY FUNCTIONS =============
 
