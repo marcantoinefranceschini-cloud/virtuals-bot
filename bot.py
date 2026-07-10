@@ -14,7 +14,7 @@ from urllib3.util.retry import Retry
 import psycopg2
 from psycopg2.pool import SimpleConnectionPool
 # Test database persistence 
- 
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
