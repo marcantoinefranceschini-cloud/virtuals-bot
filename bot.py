@@ -97,6 +97,8 @@ def init_db():
         log.error(f"❌ Database init failed: {e}")
         db_pool = None
 
+    restore_users_from_json()
+
 def add_user(chat_id):
     """Add user to database"""
     if not db_pool:
@@ -179,6 +181,35 @@ def get_stats():
     except Exception as e:
         log.error(f"Error getting stats: {e}")
         return None
+
+def backup_users_to_json():
+    """Backup active users to JSON file"""
+    try:
+        users = get_active_users()
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=2)
+    except Exception as e:
+        log.error(f"Error backing up users: {e}")
+
+def restore_users_from_json():
+    """Restore users from JSON backup if PostgreSQL is empty"""
+    try:
+        cursor_check = db_pool.getconn()
+        cursor = cursor_check.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users WHERE active = TRUE")
+        count = cursor.fetchone()[0]
+        cursor.close()
+        db_pool.putconn(cursor_check)
+        
+        if count == 0:
+            if Path(USERS_FILE).exists():
+                with open(USERS_FILE, 'r', encoding='utf-8') as f:
+                    users = json.load(f)
+                    for user_id in users:
+                        add_user(user_id)
+                log.info(f"✅ Restored {len(users)} users from JSON backup")
+    except Exception as e:
+        log.error(f"Error restoring users: {e}")
 
 def safe_float(value, default=0.0):
     try:
@@ -369,12 +400,14 @@ def handle_telegram_update(update):
         if text == "/start":
             if add_user(user_id, chat_id):
                 send_telegram(user_id, "✅ Inscrit ! Tu recevras les alertes crypto > seuil.")
+                backup_users_to_json()
             else:
                 send_telegram(user_id, "ℹ️ Déjà inscrit !")
 
         elif text == "/stop":
             remove_user(user_id)
             send_telegram(user_id, "❌ Désinscrit.")
+            backup_users_to_json()
 
         elif text == "/help":
             help_text = (
