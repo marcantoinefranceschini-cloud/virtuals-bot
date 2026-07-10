@@ -434,7 +434,7 @@ def handle_telegram_update(update):
 
         elif text == "/stop":
             remove_user(user_id)
-            send_telegram(user_id, "❌ Désinscrit."))
+            send_telegram(user_id, "❌ Désinscrit.")
 
         elif text == "/help":
             help_text = (
