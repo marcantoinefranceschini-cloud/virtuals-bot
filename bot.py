@@ -200,7 +200,7 @@ def restore_users_from_json():
         cursor.close()
         db_pool.putconn(cursor_check)
         
-                log.info(f"📊 PostgreSQL has {count} active users")
+        log.info(f"📊 PostgreSQL has {count} active users")
         if count == 0:
             if Path(USERS_FILE).exists():
                 with open(USERS_FILE, 'r', encoding='utf-8') as f:
