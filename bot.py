@@ -11,9 +11,7 @@ import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import psycopg2
-from psycopg2.pool import SimpleConnectionPool
-# Test database persistence 
+from supabase import create_client
 
 load_dotenv()
 
@@ -22,16 +20,16 @@ POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "1000"))
 PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "4"))
 STATE_FILE = Path(os.getenv("STATE_FILE", "seen_virtuals_api.json"))
-USERS_FILE = Path(os.getenv("USERS_FILE", "users.json"))
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 VIRTUALS_API = "https://api2.virtuals.io/api/virtuals"
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 REQUEST_PAUSE_S = 1.0
 TELEGRAM_PAUSE_S = 0.1
-
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-db_pool = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,18 +58,11 @@ def build_session():
     return session
 
 SESSION = build_session()
-from supabase import create_client
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
-
-def load_users():
-    """Load users from Supabase"""
-    return get_active_users()
+# ============= SUPABASE FUNCTIONS =============
 
 def get_active_users():
-    """Get users from Supabase"""
+    """Get list of active user chat_ids from Supabase"""
     if not supabase:
         return []
     try:
@@ -80,7 +71,6 @@ def get_active_users():
     except Exception as e:
         log.error(f"Error getting users: {e}")
         return []
-
 
 def add_user(chat_id):
     """Add user to Supabase"""
@@ -91,7 +81,7 @@ def add_user(chat_id):
         resp = supabase.table('users').select('chat_id').eq('chat_id', chat_id).execute()
         if resp.data:
             log.info(f"✓ User {chat_id} already exists")
-            return False  # Already exists
+            return False
         
         # Add new user
         supabase.table('users').insert({'chat_id': chat_id, 'active': True}).execute()
@@ -100,7 +90,6 @@ def add_user(chat_id):
     except Exception as e:
         log.error(f"Error adding user: {e}")
         return False
-
 
 def remove_user(chat_id):
     """Remove user from Supabase"""
@@ -114,15 +103,40 @@ def remove_user(chat_id):
         log.error(f"Error removing user: {e}")
         return False
 
-
 def record_alert(token_name, token_symbol):
-    """Record alert"""
-    pass
+    """Record an alert in Supabase"""
+    if not supabase:
+        return
+    try:
+        supabase.table('alerts').insert({
+            'token_name': token_name,
+            'token_symbol': token_symbol
+        }).execute()
+    except Exception as e:
+        log.error(f"Error recording alert: {e}")
 
 def get_stats():
-    """Get bot statistics"""
-    return {"today": 0, "total": 0, "users": len(get_active_users())}
+    """Get bot statistics from Supabase"""
+    if not supabase:
+        return {"today": 0, "total": 0, "users": 0}
+    try:
+        # Alerts today
+        resp_today = supabase.table('alerts').select('id', count='exact').gte('created_at', 'now()::date').execute()
+        today = resp_today.count or 0
+        
+        # Total alerts
+        resp_total = supabase.table('alerts').select('id', count='exact').execute()
+        total = resp_total.count or 0
+        
+        # Active users
+        users_count = len(get_active_users())
+        
+        return {"today": today, "total": total, "users": users_count}
+    except Exception as e:
+        log.error(f"Error getting stats: {e}")
+        return {"today": 0, "total": 0, "users": 0}
 
+# ============= UTILITY FUNCTIONS =============
 
 def safe_float(value, default=0.0):
     try:
@@ -135,6 +149,17 @@ def safe_float(value, default=0.0):
 def safe_str(value, default=""):
     return value if isinstance(value, str) else default
 
+def escape_markdown(text):
+    for ch in ("_", "*", "`", "["):
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+def format_num(value):
+    if value is None:
+        return "N/A"
+    return f"{value:,.0f}".replace(",", " ")
+
+# ============= API FUNCTIONS =============
 
 def fetch_page(page):
     params = {
@@ -213,15 +238,7 @@ def save_state(state):
     except OSError as exc:
         log.error("Impossible d'écrire l'état : %s", exc)
 
-def escape_markdown(text):
-    for ch in ("_", "*", "`", "["):
-        text = text.replace(ch, f"\\{ch}")
-    return text
-
-def format_num(value):
-    if value is None:
-        return "N/A"
-    return f"{value:,.0f}".replace(",", " ")
+# ============= MESSAGE FUNCTIONS =============
 
 def build_message(agent):
     name = escape_markdown(safe_str(agent.get("name"), "?"))
@@ -262,17 +279,18 @@ def send_telegram(chat_id, text):
         log.error("Envoi Telegram échoué (chat_id %s) : %s", chat_id, exc)
         return False
 
+# ============= TELEGRAM HANDLER =============
+
 def handle_telegram_update(update):
     message = update.get("message", {})
     text = safe_str(message.get("text", "")).strip()
     user_id = message.get("from", {}).get("id")
     chat_id = message.get("chat", {}).get("id")
-    chat_type = message.get("chat", {}).get("type")
 
     if not user_id or not chat_id:
         return
 
-        # Commandes = répondre EN PRIVÉ
+    # Commands
     if text in ["/start", "/stop", "/help", "/status", "/stats"]:
         if text == "/start":
             if add_user(chat_id):
@@ -289,26 +307,23 @@ def handle_telegram_update(update):
                 "/start — M'inscrire\n"
                 "/stop — Me désinscrire\n"
                 "/status — État du bot\n"
+                "/stats — Statistiques\n"
                 "/help — Cette aide"
             )
             send_telegram(user_id, help_text)
 
         elif text == "/status":
-            users = load_users()
-            active = len([u for u in users if u.get("active", True)])
-            status_text = f"👥 Users inscrits: {len(users)}\n✅ Actifs: {active}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
+            active_count = len(get_active_users())
+            status_text = f"👥 Users inscrits: {active_count}\n✅ Actifs: {active_count}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
             send_telegram(user_id, status_text)
 
         elif text == "/stats":
             stats = get_stats()
-            if stats:
-                stats_text = f"""📊 Bot Statistics
+            stats_text = f"""📊 Bot Statistics
 
 🔔 Alerts Today: {stats['today']}
 📈 Total Alerts: {stats['total']}
 👥 Active Users: {stats['users']}"""
-            else:
-                stats_text = "⚠ Unable to fetch statistics"
             send_telegram(user_id, stats_text)
 
 def process_telegram_updates():
@@ -325,6 +340,8 @@ def process_telegram_updates():
         except Exception as exc:
             log.error("Erreur polling Telegram : %s", exc)
         time.sleep(1)
+
+# ============= MAIN CYCLE =============
 
 def run_cycle(state):
     agents = fetch_new_agents()
@@ -345,6 +362,8 @@ def run_cycle(state):
         return
 
     alerts = 0
+    active_users = get_active_users()
+    
     for agent in agents:
         key = agent["tokenAddress"].lower()
         if key in seen:
@@ -354,22 +373,25 @@ def run_cycle(state):
         if volume >= VOLUME_THRESHOLD_USD:
             message = build_message(agent)
             record_alert(agent.get("name"), agent.get("symbol"))
-            users = get_active_users()
-            for user in users:
-                if send_telegram(user["chat_id"], message):
+            
+            for chat_id in active_users:
+                if send_telegram(chat_id, message):
                     alerts += 1
-                    log.info("Alerte envoyée à %s : %s ($%s)", user["user_id"], agent.get("name"), agent.get("symbol"))
+                    log.info("Alerte envoyée à %s : %s ($%s)", chat_id, agent.get("name"), agent.get("symbol"))
                 time.sleep(TELEGRAM_PAUSE_S)
+            
             seen[key] = str(agent.get("createdAt") or time.time())
             save_state(state)
 
-    if alerts == 0:
-        log.info("Cycle terminé : %d agents scannés, aucun nouveau > seuil.", len(agents))
-    log.info("Cycle : %d alertes envoyées à %d users.", alerts, len(get_active_users()))
+    log.info("Cycle : %d alertes envoyées à %d users.", alerts, len(active_users))
 
 def main():
     if not BOT_TOKEN:
         log.critical("BOT_TOKEN doit être défini. Arrêt.")
+        sys.exit(1)
+
+    if not supabase:
+        log.critical("SUPABASE_URL et SUPABASE_KEY doivent être définis. Arrêt.")
         sys.exit(1)
 
     def _shutdown(signum, _frame):
@@ -379,17 +401,11 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    load_users()
     state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     
     log.info("Démarrage (API Virtuals Multi-User) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
-    log.info("Users actuels : %d", len(load_users()))
-
-    # Initialiser les fichiers
-    if not USERS_FILE.exists():
-        USERS_FILE.write_text("[]", encoding="utf-8")
-        log.info("Fichier users.json créé.")
+    log.info("Users actuels : %d", len(get_active_users()))
 
     import threading
     tg_thread = threading.Thread(target=process_telegram_updates, daemon=True)
