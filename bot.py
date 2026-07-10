@@ -17,14 +17,15 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_MINUTES", "2"))
+POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_MINUTES", "1"))
 VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "1000"))
-STATE_FILE = Path(os.getenv("STATE_FILE", "seen_tokens_dex.json"))
+PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "2"))
+STATE_FILE = Path(os.getenv("STATE_FILE", "seen_virtuals_api.json"))
 
-VIRTUAL_TOKEN_ADDRESS = "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b"
-DEXSCREENER_URL = f"https://api.dexscreener.com/token-pairs/v1/base/{VIRTUAL_TOKEN_ADDRESS}"
+VIRTUALS_API = "https://api2.virtuals.io/api/virtuals"
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
+REQUEST_PAUSE_S = 1.0
 TELEGRAM_PAUSE_S = 1.0
 
 logging.basicConfig(
@@ -47,7 +48,7 @@ def build_session():
     session.mount("https://", adapter)
     session.headers.update(
         {
-            "User-Agent": "virtuals-monitor-bot/3.0",
+            "User-Agent": "Mozilla/5.0 (compatible; virtuals-monitor/4.0)",
             "Accept": "application/json",
         }
     )
@@ -66,58 +67,62 @@ def safe_float(value, default=0.0):
 def safe_str(value, default=""):
     return value if isinstance(value, str) else default
 
-def fetch_virtual_pairs():
-    try:
-        resp = SESSION.get(DEXSCREENER_URL, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as exc:
-        log.error("Échec récupération DexScreener : %s", exc)
-        return []
-
+def fetch_page(page):
+    params = {
+        "sort[0]": "createdAt:desc",
+        "sort[1]": "volume24h:desc",
+        "populate[0]": "image",
+        "pagination[page]": page,
+        "pagination[pageSize]": 25,
+    }
+    resp = SESSION.get(VIRTUALS_API, params=params, timeout=20)
+    resp.raise_for_status()
+    payload = resp.json()
+    data = payload.get("data")
     if not isinstance(data, list):
-        log.error("Réponse DexScreener inattendue.")
-        return []
+        raise ValueError(f"Réponse Virtuals inattendue (page {page})")
+    return data
 
+def extract_agent(item):
+    if not isinstance(item, dict):
+        return None
+
+    addr = safe_str(item.get("tokenAddress")) or safe_str(item.get("preToken"))
+    if not addr:
+        return None
+
+    volume = safe_float(item.get("volume24h"))
+    mcap = item.get("mcapInVirtual")
+    mcap = safe_float(mcap) if mcap is not None else None
+
+    return {
+        "id": item.get("id"),
+        "tokenAddress": addr,
+        "name": safe_str(item.get("name")),
+        "symbol": safe_str(item.get("symbol")),
+        "volume24h": volume,
+        "mcapVirtual": mcap,
+        "chain": safe_str(item.get("chain")),
+        "createdAt": safe_str(item.get("createdAt")),
+    }
+
+def fetch_new_agents():
     results = []
-    for pair in data:
-        if not isinstance(pair, dict):
-            continue
-
-        base = pair.get("baseToken", {}) or {}
-        quote = pair.get("quoteToken", {}) or {}
-
-        base_symbol = safe_str(base.get("symbol")).upper()
-        quote_symbol = safe_str(quote.get("symbol")).upper()
-
-        if base_symbol == "VIRTUAL":
-            agent = quote
-        elif quote_symbol == "VIRTUAL":
-            agent = base
-        else:
-            continue
-
-        addr = safe_str(agent.get("address"))
-        if not addr:
-            continue
-
-        volume = safe_float((pair.get("volume") or {}).get("h24"))
-        mcap = pair.get("marketCap")
-        mcap = safe_float(mcap) if mcap is not None else pair.get("fdv")
-        mcap = safe_float(mcap) if mcap is not None else None
-
-        results.append(
-            {
-                "tokenAddress": addr,
-                "name": safe_str(agent.get("name")),
-                "symbol": safe_str(agent.get("symbol")),
-                "volume24h": volume,
-                "mcapUsd": mcap,
-                "createdAt": pair.get("pairCreatedAt"),
-                "url": safe_str(pair.get("url")),
-            }
-        )
-
+    seen_ids = set()
+    for page in range(1, PAGES_TO_SCAN + 1):
+        try:
+            items = fetch_page(page)
+        except Exception as exc:
+            log.error("Échec récupération Virtuals page %d : %s", page, exc)
+            break
+        for item in items:
+            agent = extract_agent(item)
+            if agent and agent["tokenAddress"].lower() not in seen_ids:
+                seen_ids.add(agent["tokenAddress"].lower())
+                results.append(agent)
+        if len(items) < 25:
+            break
+        time.sleep(REQUEST_PAUSE_S)
     return results
 
 def load_state():
@@ -143,7 +148,7 @@ def escape_markdown(text):
         text = text.replace(ch, f"\\{ch}")
     return text
 
-def format_usd(value):
+def format_num(value):
     if value is None:
         return "N/A"
     return f"{value:,.0f}".replace(",", " ")
@@ -152,14 +157,19 @@ def build_message(agent):
     name = escape_markdown(safe_str(agent.get("name"), "?"))
     ticker = escape_markdown(safe_str(agent.get("symbol"), "?"))
     volume = agent.get("volume24h", 0.0)
-    mcap = agent.get("mcapUsd")
+    mcap = agent.get("mcapVirtual")
+    chain = escape_markdown(safe_str(agent.get("chain"), "?"))
     ca = agent.get("tokenAddress", "N/A")
-    link = agent.get("url") or f"https://dexscreener.com/base/{ca}"
+    agent_id = agent.get("id")
+    link = f"https://app.virtuals.io/virtuals/{agent_id}" if agent_id else f"https://app.virtuals.io"
+
+    mcap_line = f"📊 Market cap : {format_num(mcap)} $VIRTUAL\n" if mcap is not None else ""
 
     return (
         f"🆕 *{name}* (${ticker})\n"
-        f"💧 Volume 24h : {format_usd(volume)}$\n"
-        f"📊 Market cap : {format_usd(mcap)}$\n"
+        f"⛓ Chain : {chain}\n"
+        f"💧 Volume 24h : {format_num(volume)}$\n"
+        f"{mcap_line}"
         f"🔗 CA : `{ca}`\n"
         f"👉 {link}"
     )
@@ -185,9 +195,9 @@ def send_telegram(text):
         return False
 
 def run_cycle(state):
-    agents = fetch_virtual_pairs()
+    agents = fetch_new_agents()
     if not agents:
-        log.warning("Aucune paire $VIRTUAL récupérée ce cycle.")
+        log.warning("Aucun agent récupéré ce cycle.")
         return
 
     seen = state["seen"]
@@ -197,7 +207,7 @@ def run_cycle(state):
             seen[agent["tokenAddress"].lower()] = str(agent.get("createdAt") or time.time())
         state["initialized"] = True
         save_state(state)
-        log.info("Initialisation : %d paires $VIRTUAL marquées comme déjà vues.", len(seen))
+        log.info("Initialisation : %d agents marqués comme déjà vus.", len(seen))
         return
 
     alerts = 0
@@ -207,13 +217,12 @@ def run_cycle(state):
             continue
 
         volume = agent.get("volume24h", 0.0)
-        log.info(f"DEBUG: {agent.get('symbol')} vol={volume}")
         if volume >= VOLUME_THRESHOLD_USD:
             message = build_message(agent)
             if send_telegram(message):
                 seen[key] = str(agent.get("createdAt") or time.time())
                 alerts += 1
-                log.info("Alerte envoyée : %s ($%s) vol=%.0f$", agent.get("name"), agent.get("symbol"), volume)
+                log.info("Alerte : %s ($%s) vol=%.0f$ chain=%s", agent.get("name"), agent.get("symbol"), volume, agent.get("chain"))
                 save_state(state)
                 time.sleep(TELEGRAM_PAUSE_S)
             else:
@@ -222,7 +231,7 @@ def run_cycle(state):
             seen[key] = str(agent.get("createdAt") or time.time())
 
     if alerts == 0:
-        log.info("Cycle terminé : %d paires $VIRTUAL scannées.", len(agents))
+        log.info("Cycle terminé : %d agents scannés, aucun nouveau > seuil.", len(agents))
     save_state(state)
 
 def main():
@@ -239,7 +248,7 @@ def main():
 
     state = load_state()
     interval_s = max(30.0, POLL_INTERVAL_MINUTES * 60)
-    log.info("Démarrage (DexScreener) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
+    log.info("Démarrage (API Virtuals) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
 
     while True:
         try:
