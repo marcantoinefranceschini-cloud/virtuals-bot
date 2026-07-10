@@ -183,8 +183,8 @@ def get_stats():
 def backup_users_to_json():
     """Backup active users to JSON file"""
     try:
-        log.info(f"💾 Backing up {len(users)} users to JSON")
         users = get_active_users()
+        log.info(f"💾 Backing up {len(users)} users to JSON")  # ✅ users existe maintenant !
         with open(USERS_FILE, 'w', encoding='utf-8') as f:
             json.dump(users, f, indent=2)
     except Exception as e:
