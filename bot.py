@@ -204,12 +204,14 @@ def run_cycle(state):
 
     seen = state["seen"]
 
-    if not state.get("initialized"):
+        if not state.get("initialized"):
         for agent in agents:
-            seen[agent["tokenAddress"].lower()] = str(agent.get("createdAt") or time.time())
+            volume = agent.get("volume24h", 0.0)
+            if volume >= VOLUME_THRESHOLD_USD:
+                seen[agent["tokenAddress"].lower()] = str(agent.get("createdAt") or time.time())
         state["initialized"] = True
         save_state(state)
-        log.info("Initialisation : %d agents marqués comme déjà vus.", len(seen))
+        log.info("Initialisation : %d agents > seuil marqués comme vus.", len(seen))
         return
 
     alerts = 0
