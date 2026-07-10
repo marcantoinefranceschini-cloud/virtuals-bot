@@ -11,6 +11,8 @@ import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import psycopg2
+from psycopg2.pool import SimpleConnectionPool
 
 load_dotenv()
 
@@ -26,6 +28,9 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 REQUEST_PAUSE_S = 1.0
 TELEGRAM_PAUSE_S = 0.1
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+db_pool = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +59,83 @@ def build_session():
     return session
 
 SESSION = build_session()
+def init_db():
+    """Initialize database connection pool and create tables"""
+    global db_pool
+    if not DATABASE_URL:
+        log.warning("DATABASE_URL not set - running without persistence")
+        return
+    
+    try:
+        db_pool = SimpleConnectionPool(1, 10, DATABASE_URL)
+        conn = db_pool.getconn()
+        cursor = conn.cursor()
+        
+        # Create users table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                chat_id BIGINT UNIQUE NOT NULL,
+                active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        cursor.close()
+        db_pool.putconn(conn)
+        log.info("✅ Database initialized successfully")
+    except Exception as e:
+        log.error(f"❌ Database init failed: {e}")
+        db_pool = None
+
+def add_user(chat_id):
+    """Add user to database"""
+    if not db_pool:
+        return False
+    try:
+        conn = db_pool.getconn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO users (chat_id) VALUES (%s) ON CONFLICT DO NOTHING")
+        cursor.execute("UPDATE users SET active = TRUE WHERE chat_id = %s", (chat_id,))
+        conn.commit()
+        cursor.close()
+        db_pool.putconn(conn)
+        return True
+    except Exception as e:
+        log.error(f"Error adding user: {e}")
+        return False
+
+def remove_user(chat_id):
+    """Remove user from database"""
+    if not db_pool:
+        return False
+    try:
+        conn = db_pool.getconn()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET active = FALSE WHERE chat_id = %s", (chat_id,))
+        conn.commit()
+        cursor.close()
+        db_pool.putconn(conn)
+        return True
+    except Exception as e:
+        log.error(f"Error removing user: {e}")
+        return False
+
+def get_active_users():
+    """Get list of active user chat IDs"""
+    if not db_pool:
+        return []
+    try:
+        conn = db_pool.getconn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT chat_id FROM users WHERE active = TRUE")
+        users = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        db_pool.putconn(conn)
+        return users
+    except Exception as e:
+        log.error(f"Error getting users: {e}")
+        return []
 
 def safe_float(value, default=0.0):
     try:
@@ -333,6 +415,7 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
+    init_db()  # Initialize database
     state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     
