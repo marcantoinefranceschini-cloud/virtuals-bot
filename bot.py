@@ -291,6 +291,30 @@ def send_telegram(chat_id, text):
 
 # ============= TELEGRAM HANDLER =============
 
+def get_user_threshold(chat_id):
+    """Get user's volume threshold from Supabase"""
+    if not supabase:
+        return VOLUME_THRESHOLD_USD
+    try:
+        resp = supabase.table('users').select('volume_threshold').eq('chat_id', chat_id).execute()
+        if resp.data and resp.data[0].get('volume_threshold'):
+            return resp.data[0]['volume_threshold']
+    except Exception as e:
+        log.error(f"Error getting user threshold: {e}")
+    return VOLUME_THRESHOLD_USD
+
+def set_user_threshold(chat_id, threshold):
+    """Set user's volume threshold in Supabase"""
+    if not supabase:
+        return False
+    try:
+        supabase.table('users').update({'volume_threshold': threshold}).eq('chat_id', chat_id).execute()
+        log.info(f"✓ User {chat_id} threshold set to {threshold}")
+        return True
+    except Exception as e:
+        log.error(f"Error setting threshold: {e}")
+        return False
+
 def handle_telegram_update(update):
     message = update.get("message", {})
     text = safe_str(message.get("text", "")).strip()
@@ -301,7 +325,7 @@ def handle_telegram_update(update):
         return
 
     # Commands
-    if text in ["/start", "/stop", "/help", "/status", "/stats"]:
+    if text in ["/start", "/stop", "/help", "/status", "/stats", "/threshold"]:
         if text == "/start":
             if add_user(chat_id):
                 send_telegram(user_id, "✅ Inscrit ! Tu recevras les alertes crypto > seuil.")
@@ -317,6 +341,8 @@ def handle_telegram_update(update):
                 "/start — M'inscrire\n"
                 "/stop — Me désinscrire\n"
                 "/status — État du bot\n"
+                "/threshold — Voir mon seuil\n"
+                "/setthreshold 500 — Changer mon seuil\n"
                 "/stats — Statistiques\n"
                 "/help — Cette aide"
             )
@@ -324,8 +350,14 @@ def handle_telegram_update(update):
 
         elif text == "/status":
             active_count = len(get_active_users())
-            status_text = f"👥 Users inscrits: {active_count}\n✅ Actifs: {active_count}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
+            user_threshold = get_user_threshold(chat_id)
+            status_text = f"👥 Users inscrits: {active_count}\n✅ Actifs: {active_count}\n💰 Ton seuil: {user_threshold}$"
             send_telegram(user_id, status_text)
+
+        elif text == "/threshold":
+            user_threshold = get_user_threshold(chat_id)
+            threshold_text = f"💰 Ton seuil actuel : {user_threshold}$\n\nUtilise /setthreshold MONTANT pour le changer."
+            send_telegram(user_id, threshold_text)
 
         elif text == "/stats":
             stats = get_stats()
@@ -335,6 +367,21 @@ def handle_telegram_update(update):
 📈 Total Alerts: {stats['total']}
 👥 Active Users: {stats['users']}"""
             send_telegram(user_id, stats_text)
+
+    # /setthreshold command
+    elif text.startswith("/setthreshold "):
+        try:
+            amount_str = text.replace("/setthreshold ", "").strip()
+            amount = float(amount_str)
+            if amount < 0:
+                send_telegram(user_id, "❌ Le seuil doit être positif !")
+            elif set_user_threshold(chat_id, amount):
+                send_telegram(user_id, f"✅ Seuil changé à {amount}$ !")
+            else:
+                send_telegram(user_id, "❌ Erreur lors du changement du seuil.")
+        except ValueError:
+            send_telegram(user_id, "❌ Format invalide. Utilise : /setthreshold 500")
+
 
 def process_telegram_updates():
     offset = 0
@@ -364,6 +411,7 @@ def run_cycle(state):
     if not state.get("initialized"):
         for agent in agents:
             volume = agent.get("volume24h", 0.0)
+            # On initialise avec le seuil global
             if volume >= VOLUME_THRESHOLD_USD:
                 seen[agent["tokenAddress"].lower()] = str(agent.get("createdAt") or time.time())
         state["initialized"] = True
@@ -380,20 +428,24 @@ def run_cycle(state):
             continue
 
         volume = agent.get("volume24h", 0.0)
-        if volume >= VOLUME_THRESHOLD_USD:
-            message = build_message(agent)
-            record_alert(agent.get("name"), agent.get("symbol"))
-            
-            for chat_id in active_users:
+        
+        # Envoyer à chaque user selon SON seuil
+        for chat_id in active_users:
+            user_threshold = get_user_threshold(chat_id)
+            if volume >= user_threshold:
+                message = build_message(agent)
+                record_alert(agent.get("name"), agent.get("symbol"))
+                
                 if send_telegram(chat_id, message):
                     alerts += 1
                     log.info("Alerte envoyée à %s : %s ($%s)", chat_id, agent.get("name"), agent.get("symbol"))
                 time.sleep(TELEGRAM_PAUSE_S)
-            
-            seen[key] = str(agent.get("createdAt") or time.time())
-            save_state(state)
+        
+        seen[key] = str(agent.get("createdAt") or time.time())
+        save_state(state)
 
     log.info("Cycle : %d alertes envoyées à %d users.", alerts, len(active_users))
+
 
 def main():
     if not BOT_TOKEN:
