@@ -97,8 +97,6 @@ def init_db():
         log.error(f"❌ Database init failed: {e}")
         db_pool = None
 
-    restore_users_from_json()
-
 def add_user(chat_id):
     """Add user to database"""
     if not db_pool:
@@ -185,6 +183,7 @@ def get_stats():
 def backup_users_to_json():
     """Backup active users to JSON file"""
     try:
+        log.info(f"💾 Backing up {len(users)} users to JSON")
         users = get_active_users()
         with open(USERS_FILE, 'w', encoding='utf-8') as f:
             json.dump(users, f, indent=2)
@@ -201,6 +200,7 @@ def restore_users_from_json():
         cursor.close()
         db_pool.putconn(cursor_check)
         
+                log.info(f"📊 PostgreSQL has {count} active users")
         if count == 0:
             if Path(USERS_FILE).exists():
                 with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -505,6 +505,7 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown)
 
     init_db()  # Initialize database
+    restore_users_from_json() 
     state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     
