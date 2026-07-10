@@ -17,7 +17,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_SECONDS", "30"))
+POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "1000"))
 PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "2"))
 STATE_FILE = Path(os.getenv("STATE_FILE", "seen_virtuals_api.json"))
