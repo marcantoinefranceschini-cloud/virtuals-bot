@@ -265,13 +265,13 @@ def handle_telegram_update(update):
         # Commandes = répondre EN PRIVÉ
     if text in ["/start", "/stop", "/help", "/status", "/stats"]:
         if text == "/start":
-            if add_user(user_id, chat_id):
+            if add_user(chat_id):
                 send_telegram(user_id, "✅ Inscrit ! Tu recevras les alertes crypto > seuil.")
             else:
                 send_telegram(user_id, "ℹ️ Déjà inscrit !")
 
         elif text == "/stop":
-            remove_user(user_id)
+            remove_user(chat_id)
             send_telegram(user_id, "❌ Désinscrit.")
 
         elif text == "/help":
