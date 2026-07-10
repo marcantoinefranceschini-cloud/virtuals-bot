@@ -69,12 +69,14 @@ def safe_str(value, default=""):
 
 def fetch_page(page):
     params = {
+        "filters[status]": 5,
         "sort[0]": "createdAt:desc",
         "sort[1]": "volume24h:desc",
         "populate[0]": "image",
         "pagination[page]": page,
         "pagination[pageSize]": 25,
     }
+
     resp = SESSION.get(VIRTUALS_API, params=params, timeout=20)
     resp.raise_for_status()
     payload = resp.json()
