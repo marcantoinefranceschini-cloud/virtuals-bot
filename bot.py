@@ -17,7 +17,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID = os.getenv("CHAT_ID", "").strip()
 
-POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_MINUTES", "1"))
+POLL_INTERVAL_MINUTES = float(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "1000"))
 PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "2"))
 STATE_FILE = Path(os.getenv("STATE_FILE", "seen_virtuals_api.json"))
@@ -249,8 +249,9 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown)
 
     state = load_state()
-    interval_s = max(30.0, POLL_INTERVAL_MINUTES * 60)
+    interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     log.info("Démarrage (API Virtuals) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
+
 
     while True:
         try:
