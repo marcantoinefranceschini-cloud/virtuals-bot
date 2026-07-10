@@ -65,105 +65,158 @@ def init_db():
     global db_pool
     if not DATABASE_URL:
         log.warning("DATABASE_URL not set - running without persistence")
+        db_pool = None
         return
-    
+    try:
+        masked = DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else "unknown"
+        log.info(f"🔌 Connecting to database host: {masked}")
+    except Exception:
+        pass
     try:
         db_pool = SimpleConnectionPool(1, 10, DATABASE_URL)
         conn = db_pool.getconn()
-        cursor = conn.cursor()
-        
-        # Create users table if it doesn't exist
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                chat_id BIGINT UNIQUE NOT NULL,
-                active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS alerts (
-                id SERIAL PRIMARY KEY,
-                token_name TEXT,
-                token_symbol TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-        cursor.close()
-        db_pool.putconn(conn)
-        log.info("✅ Database initialized successfully")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    chat_id BIGINT UNIQUE NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id SERIAL PRIMARY KEY,
+                    token_name TEXT,
+                    token_symbol TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            cursor.close()
+            log.info("✅ Database initialized successfully")
+        except Exception as e:
+            conn.rollback()
+            log.error(f"❌ Table creation failed: {e}")
+        finally:
+            db_pool.putconn(conn)
     except Exception as e:
         log.error(f"❌ Database init failed: {e}")
         db_pool = None
+        
 
 def add_user(chat_id):
     """Add user to database"""
     if not db_pool:
         return False
+    conn = None
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (chat_id) VALUES (%s) ON CONFLICT DO NOTHING", (chat_id,))
-        cursor.execute("UPDATE users SET active = TRUE WHERE chat_id = %s", (chat_id,))
+        cursor.execute(
+            "INSERT INTO users (chat_id, active) VALUES (%s, TRUE) "
+            "ON CONFLICT (chat_id) DO UPDATE SET active = TRUE",
+            (chat_id,)
+        )
         conn.commit()
         cursor.close()
-        db_pool.putconn(conn)
+        log.info(f"✅ User {chat_id} added/reactivated")
         return True
     except Exception as e:
-        log.error(f"Error adding user: {e}")
+        log.error(f"Error adding user {chat_id}: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return False
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
 
 def remove_user(chat_id):
-    """Remove user from database"""
+    """Deactivate user in database"""
     if not db_pool:
         return False
+    conn = None
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
         cursor.execute("UPDATE users SET active = FALSE WHERE chat_id = %s", (chat_id,))
         conn.commit()
         cursor.close()
-        db_pool.putconn(conn)
         return True
     except Exception as e:
-        log.error(f"Error removing user: {e}")
+        log.error(f"Error removing user {chat_id}: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return False
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
 
 def get_active_users():
     """Get list of active user chat IDs"""
     if not db_pool:
         return []
+    conn = None
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
         cursor.execute("SELECT chat_id FROM users WHERE active = TRUE")
         users = [row[0] for row in cursor.fetchall()]
         cursor.close()
-        db_pool.putconn(conn)
         return users
     except Exception as e:
         log.error(f"Error getting users: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return []
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
 
 def record_alert(token_name, token_symbol):
     """Record an alert in database"""
     if not db_pool:
         return
+    conn = None
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO alerts (token_name, token_symbol) VALUES (%s, %s)", (token_name, token_symbol))
+        cursor.execute(
+            "INSERT INTO alerts (token_name, token_symbol) VALUES (%s, %s)",
+            (token_name, token_symbol)
+        )
         conn.commit()
         cursor.close()
-        db_pool.putconn(conn)
     except Exception as e:
         log.error(f"Error recording alert: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
 
 def get_stats():
     """Get bot statistics"""
     if not db_pool:
         return None
+    conn = None
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
@@ -174,42 +227,18 @@ def get_stats():
         cursor.execute("SELECT COUNT(*) FROM users WHERE active = TRUE")
         users = cursor.fetchone()[0]
         cursor.close()
-        db_pool.putconn(conn)
         return {"today": today, "total": total, "users": users}
     except Exception as e:
         log.error(f"Error getting stats: {e}")
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return None
-
-def backup_users_to_json():
-    """Backup active users to JSON file"""
-    try:
-        users = get_active_users()
-        log.info(f"💾 Backing up {len(users)} users to JSON")  # ✅ users existe maintenant !
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(users, f, indent=2)
-    except Exception as e:
-        log.error(f"Error backing up users: {e}")
-
-def restore_users_from_json():
-    """Restore users from JSON backup if PostgreSQL is empty"""
-    try:
-        cursor_check = db_pool.getconn()
-        cursor = cursor_check.cursor()
-        cursor.execute("SELECT COUNT(*) FROM users WHERE active = TRUE")
-        count = cursor.fetchone()[0]
-        cursor.close()
-        db_pool.putconn(cursor_check)
-        
-        log.info(f"📊 PostgreSQL has {count} active users")
-        if count == 0:
-            if Path(USERS_FILE).exists():
-                with open(USERS_FILE, 'r', encoding='utf-8') as f:
-                    users = json.load(f)
-                    for user_id in users:
-                        add_user(user_id)
-                log.info(f"✅ Restored {len(users)} users from JSON backup")
-    except Exception as e:
-        log.error(f"Error restoring users: {e}")
+    finally:
+        if conn:
+            db_pool.putconn(conn)
 
 def safe_float(value, default=0.0):
     try:
@@ -400,14 +429,12 @@ def handle_telegram_update(update):
         if text == "/start":
             if add_user(user_id, chat_id):
                 send_telegram(user_id, "✅ Inscrit ! Tu recevras les alertes crypto > seuil.")
-                backup_users_to_json()
             else:
                 send_telegram(user_id, "ℹ️ Déjà inscrit !")
 
         elif text == "/stop":
             remove_user(user_id)
-            send_telegram(user_id, "❌ Désinscrit.")
-            backup_users_to_json()
+            send_telegram(user_id, "❌ Désinscrit."))
 
         elif text == "/help":
             help_text = (
@@ -505,7 +532,6 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown)
 
     init_db()  # Initialize database
-    restore_users_from_json() 
     state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     
