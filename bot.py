@@ -60,185 +60,62 @@ def build_session():
     return session
 
 SESSION = build_session()
-def init_db():
-    """Initialize database connection pool and create tables"""
-    global db_pool
-    if not DATABASE_URL:
-        log.warning("DATABASE_URL not set - running without persistence")
-        db_pool = None
-        return
+# Users storage
+active_users = []
+
+def load_users():
+    """Load users from JSON file"""
+    global active_users
     try:
-        masked = DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else "unknown"
-        log.info(f"🔌 Connecting to database host: {masked}")
-    except Exception:
-        pass
-    try:
-        db_pool = SimpleConnectionPool(1, 10, DATABASE_URL)
-        conn = db_pool.getconn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    chat_id BIGINT UNIQUE NOT NULL,
-                    active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS alerts (
-                    id SERIAL PRIMARY KEY,
-                    token_name TEXT,
-                    token_symbol TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
-            cursor.close()
-            log.info("✅ Database initialized successfully")
-        except Exception as e:
-            conn.rollback()
-            log.error(f"❌ Table creation failed: {e}")
-        finally:
-            db_pool.putconn(conn)
+        if USERS_FILE.exists():
+            active_users = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+            log.info(f"✅ Loaded {len(active_users)} users from JSON")
+        else:
+            active_users = []
     except Exception as e:
-        log.error(f"❌ Database init failed: {e}")
-        db_pool = None
-        
+        log.error(f"Error loading users: {e}")
+        active_users = []
+
+def save_users():
+    """Save users to JSON file"""
+    global active_users
+    try:
+        USERS_FILE.write_text(json.dumps(active_users, indent=2), encoding="utf-8")
+    except Exception as e:
+        log.error(f"Error saving users: {e}")
 
 def add_user(chat_id):
-    """Add user to database"""
-    if not db_pool:
-        return False
-    conn = None
-    try:
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO users (chat_id, active) VALUES (%s, TRUE) "
-            "ON CONFLICT (chat_id) DO UPDATE SET active = TRUE",
-            (chat_id,)
-        )
-        conn.commit()
-        cursor.close()
-        log.info(f"✅ User {chat_id} added/reactivated")
+    """Add user to list"""
+    global active_users
+    if chat_id not in active_users:
+        active_users.append(chat_id)
+        save_users()
+        log.info(f"✅ User {chat_id} added")
         return True
-    except Exception as e:
-        log.error(f"Error adding user {chat_id}: {e}")
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return False
-    finally:
-        if conn:
-            db_pool.putconn(conn)
-
+    return False
 
 def remove_user(chat_id):
-    """Deactivate user in database"""
-    if not db_pool:
-        return False
-    conn = None
-    try:
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET active = FALSE WHERE chat_id = %s", (chat_id,))
-        conn.commit()
-        cursor.close()
+    """Remove user from list"""
+    global active_users
+    if chat_id in active_users:
+        active_users.remove(chat_id)
+        save_users()
+        log.info(f"✅ User {chat_id} removed")
         return True
-    except Exception as e:
-        log.error(f"Error removing user {chat_id}: {e}")
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return False
-    finally:
-        if conn:
-            db_pool.putconn(conn)
-
+    return False
 
 def get_active_users():
-    """Get list of active user chat IDs"""
-    if not db_pool:
-        return []
-    conn = None
-    try:
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute("SELECT chat_id FROM users WHERE active = TRUE")
-        users = [row[0] for row in cursor.fetchall()]
-        cursor.close()
-        return users
-    except Exception as e:
-        log.error(f"Error getting users: {e}")
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return []
-    finally:
-        if conn:
-            db_pool.putconn(conn)
-
+    """Get list of active users"""
+    return active_users
 
 def record_alert(token_name, token_symbol):
-    """Record an alert in database"""
-    if not db_pool:
-        return
-    conn = None
-    try:
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO alerts (token_name, token_symbol) VALUES (%s, %s)",
-            (token_name, token_symbol)
-        )
-        conn.commit()
-        cursor.close()
-    except Exception as e:
-        log.error(f"Error recording alert: {e}")
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-    finally:
-        if conn:
-            db_pool.putconn(conn)
-
+    """Record alert"""
+    pass
 
 def get_stats():
     """Get bot statistics"""
-    if not db_pool:
-        return None
-    conn = None
-    try:
-        conn = db_pool.getconn()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM alerts WHERE created_at >= CURRENT_DATE")
-        today = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM alerts")
-        total = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM users WHERE active = TRUE")
-        users = cursor.fetchone()[0]
-        cursor.close()
-        return {"today": today, "total": total, "users": users}
-    except Exception as e:
-        log.error(f"Error getting stats: {e}")
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        return None
-    finally:
-        if conn:
-            db_pool.putconn(conn)
+    return {"today": 0, "total": 0, "users": len(active_users)}
+
 
 def safe_float(value, default=0.0):
     try:
@@ -531,8 +408,8 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    init_db()  # Initialize database
-    state = load_state()
+    load_users()
+        state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
     
     log.info("Démarrage (API Virtuals Multi-User) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
