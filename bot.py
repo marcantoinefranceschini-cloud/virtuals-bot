@@ -80,6 +80,14 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                id SERIAL PRIMARY KEY,
+                token_name TEXT,
+                token_symbol TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
         cursor.close()
         db_pool.putconn(conn)
@@ -136,6 +144,40 @@ def get_active_users():
     except Exception as e:
         log.error(f"Error getting users: {e}")
         return []
+
+def record_alert(token_name, token_symbol):
+    """Record an alert in database"""
+    if not db_pool:
+        return
+    try:
+        conn = db_pool.getconn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO alerts (token_name, token_symbol) VALUES (%s, %s)", (token_name, token_symbol))
+        conn.commit()
+        cursor.close()
+        db_pool.putconn(conn)
+    except Exception as e:
+        log.error(f"Error recording alert: {e}")
+
+def get_stats():
+    """Get bot statistics"""
+    if not db_pool:
+        return None
+    try:
+        conn = db_pool.getconn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM alerts WHERE created_at >= CURRENT_DATE")
+        today = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM alerts")
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM users WHERE active = TRUE")
+        users = cursor.fetchone()[0]
+        cursor.close()
+        db_pool.putconn(conn)
+        return {"today": today, "total": total, "users": users}
+    except Exception as e:
+        log.error(f"Error getting stats: {e}")
+        return None
 
 def safe_float(value, default=0.0):
     try:
@@ -322,7 +364,7 @@ def handle_telegram_update(update):
         return
 
         # Commandes = répondre EN PRIVÉ
-    if text in ["/start", "/stop", "/help", "/status"]:
+    if text in ["/start", "/stop", "/help", "/status", "/stats"]:
         if text == "/start":
             if add_user(user_id, chat_id):
                 send_telegram(user_id, "✅ Inscrit ! Tu recevras les alertes crypto > seuil.")
@@ -347,6 +389,18 @@ def handle_telegram_update(update):
             active = len([u for u in users if u.get("active", True)])
             status_text = f"👥 Users inscrits: {len(users)}\n✅ Actifs: {active}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
             send_telegram(user_id, status_text)
+
+        elif text == "/stats":
+            stats = get_stats()
+            if stats:
+                stats_text = f"""📊 Bot Statistics
+
+🔔 Alerts Today: {stats['today']}
+📈 Total Alerts: {stats['total']}
+👥 Active Users: {stats['users']}"""
+            else:
+                stats_text = "⚠ Unable to fetch statistics"
+            send_telegram(user_id, stats_text)
 
 def process_telegram_updates():
     offset = 0
@@ -390,6 +444,7 @@ def run_cycle(state):
         volume = agent.get("volume24h", 0.0)
         if volume >= VOLUME_THRESHOLD_USD:
             message = build_message(agent)
+            record_alert(agent.get("name"), agent.get("symbol"))
             users = get_active_users()
             for user in users:
                 if send_telegram(user["chat_id"], message):
