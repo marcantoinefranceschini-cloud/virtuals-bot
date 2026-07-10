@@ -234,34 +234,37 @@ def handle_telegram_update(update):
     text = safe_str(message.get("text", "")).strip()
     user_id = message.get("from", {}).get("id")
     chat_id = message.get("chat", {}).get("id")
+    chat_type = message.get("chat", {}).get("type")
 
     if not user_id or not chat_id:
         return
 
-    if text == "/start":
-        if add_user(user_id, chat_id):
-            send_telegram(chat_id, "✅ Inscrit ! Tu recevras les alertes agents > seuil.")
-        else:
-            send_telegram(chat_id, "ℹ️ Déjà inscrit !")
+        # Commandes = répondre EN PRIVÉ
+    if text in ["/start", "/stop", "/help", "/status"]:
+        if text == "/start":
+            if add_user(user_id, chat_id):
+                send_telegram(user_id, "✅ Inscrit ! Tu recevras les alertes crypto > seuil.")
+            else:
+                send_telegram(user_id, "ℹ️ Déjà inscrit !")
 
-    elif text == "/stop":
-        remove_user(user_id)
-        send_telegram(chat_id, "❌ Désinscrit.")
+        elif text == "/stop":
+            remove_user(user_id)
+            send_telegram(user_id, "❌ Désinscrit.")
 
-    elif text == "/help":
-        help_text = (
-            "/start — M'inscrire\n"
-            "/stop — Me désinscrire\n"
-            "/status — État du bot\n"
-            "/help — Cette aide"
-        )
-        send_telegram(chat_id, help_text)
+        elif text == "/help":
+            help_text = (
+                "/start — M'inscrire\n"
+                "/stop — Me désinscrire\n"
+                "/status — État du bot\n"
+                "/help — Cette aide"
+            )
+            send_telegram(user_id, help_text)
 
-    elif text == "/status":
-        users = load_users()
-        active = len([u for u in users if u.get("active", True)])
-        status_text = f"👥 Users inscrits: {len(users)}\n✅ Actifs: {active}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
-        send_telegram(chat_id, status_text)
+        elif text == "/status":
+            users = load_users()
+            active = len([u for u in users if u.get("active", True)])
+            status_text = f"👥 Users inscrits: {len(users)}\n✅ Actifs: {active}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
+            send_telegram(user_id, status_text)
 
 def process_telegram_updates():
     offset = 0
