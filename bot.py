@@ -13,7 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import psycopg2
 from psycopg2.pool import SimpleConnectionPool
-# Test database persistence
+# Test database persistence 
 
 load_dotenv()
 
