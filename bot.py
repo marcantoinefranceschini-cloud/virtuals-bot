@@ -15,18 +15,17 @@ from urllib3.util.retry import Retry
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-CHAT_ID = os.getenv("CHAT_ID", "").strip()
-
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 VOLUME_THRESHOLD_USD = float(os.getenv("VOLUME_THRESHOLD_USD", "1000"))
-PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "2"))
+PAGES_TO_SCAN = int(os.getenv("PAGES_TO_SCAN", "4"))
 STATE_FILE = Path(os.getenv("STATE_FILE", "seen_virtuals_api.json"))
+USERS_FILE = Path(os.getenv("USERS_FILE", "users.json"))
 
 VIRTUALS_API = "https://api2.virtuals.io/api/virtuals"
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 REQUEST_PAUSE_S = 1.0
-TELEGRAM_PAUSE_S = 1.0
+TELEGRAM_PAUSE_S = 0.1
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +47,7 @@ def build_session():
     session.mount("https://", adapter)
     session.headers.update(
         {
-            "User-Agent": "Mozilla/5.0 (compatible; virtuals-monitor/4.0)",
+            "User-Agent": "Mozilla/5.0 (compatible; virtuals-monitor/5.0)",
             "Accept": "application/json",
         }
     )
@@ -67,6 +66,43 @@ def safe_float(value, default=0.0):
 def safe_str(value, default=""):
     return value if isinstance(value, str) else default
 
+def load_users():
+    if USERS_FILE.exists():
+        try:
+            users = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+            if isinstance(users, list):
+                return users
+        except (json.JSONDecodeError, OSError) as exc:
+            log.error("Fichier users corrompu (%s) — réinitialisation.", exc)
+    return []
+
+def save_users(users):
+    tmp = USERS_FILE.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(users, indent=2), encoding="utf-8")
+        tmp.replace(USERS_FILE)
+    except OSError as exc:
+        log.error("Impossible d'écrire users : %s", exc)
+
+def add_user(user_id, chat_id):
+    users = load_users()
+    if not any(u["user_id"] == user_id for u in users):
+        users.append({"user_id": user_id, "chat_id": chat_id, "active": True})
+        save_users(users)
+        log.info("User enregistré : %s (chat_id=%s)", user_id, chat_id)
+        return True
+    return False
+
+def remove_user(user_id):
+    users = load_users()
+    users = [u for u in users if u["user_id"] != user_id]
+    save_users(users)
+    log.info("User supprimé : %s", user_id)
+
+def get_active_users():
+    users = load_users()
+    return [u for u in users if u.get("active", True)]
+
 def fetch_page(page):
     params = {
         "filters[status]": 5,
@@ -76,7 +112,6 @@ def fetch_page(page):
         "pagination[page]": page,
         "pagination[pageSize]": 25,
     }
-
     resp = SESSION.get(VIRTUALS_API, params=params, timeout=20)
     resp.raise_for_status()
     payload = resp.json()
@@ -176,10 +211,10 @@ def build_message(agent):
         f"👉 {link}"
     )
 
-def send_telegram(text):
+def send_telegram(chat_id, text):
     url = TELEGRAM_API.format(token=BOT_TOKEN, method="sendMessage")
     payload = {
-        "chat_id": CHAT_ID,
+        "chat_id": chat_id,
         "text": text,
         "parse_mode": "Markdown",
         "disable_web_page_preview": True,
@@ -188,13 +223,60 @@ def send_telegram(text):
         resp = SESSION.post(url, json=payload, timeout=20)
         if resp.status_code == 200:
             return True
-        log.warning("Telegram %d : nouvel essai sans Markdown", resp.status_code)
-        payload.pop("parse_mode", None)
-        resp = SESSION.post(url, json=payload, timeout=20)
-        return resp.status_code == 200
-    except requests.RequestException as exc:
-        log.error("Envoi Telegram échoué : %s", exc)
+        log.warning("Telegram %d pour chat_id %s", resp.status_code, chat_id)
         return False
+    except requests.RequestException as exc:
+        log.error("Envoi Telegram échoué (chat_id %s) : %s", chat_id, exc)
+        return False
+
+def handle_telegram_update(update):
+    message = update.get("message", {})
+    text = safe_str(message.get("text", "")).strip()
+    user_id = message.get("from", {}).get("id")
+    chat_id = message.get("chat", {}).get("id")
+
+    if not user_id or not chat_id:
+        return
+
+    if text == "/start":
+        if add_user(user_id, chat_id):
+            send_telegram(chat_id, "✅ Inscrit ! Tu recevras les alertes agents > seuil.")
+        else:
+            send_telegram(chat_id, "ℹ️ Déjà inscrit !")
+
+    elif text == "/stop":
+        remove_user(user_id)
+        send_telegram(chat_id, "❌ Désinscrit.")
+
+    elif text == "/help":
+        help_text = (
+            "/start — M'inscrire\n"
+            "/stop — Me désinscrire\n"
+            "/status — État du bot\n"
+            "/help — Cette aide"
+        )
+        send_telegram(chat_id, help_text)
+
+    elif text == "/status":
+        users = load_users()
+        active = len([u for u in users if u.get("active", True)])
+        status_text = f"👥 Users inscrits: {len(users)}\n✅ Actifs: {active}\n💰 Seuil: {VOLUME_THRESHOLD_USD}$"
+        send_telegram(chat_id, status_text)
+
+def process_telegram_updates():
+    offset = 0
+    while True:
+        try:
+            url = TELEGRAM_API.format(token=BOT_TOKEN, method="getUpdates")
+            resp = SESSION.get(url, params={"offset": offset, "timeout": 30}, timeout=35)
+            data = resp.json()
+            if data.get("ok"):
+                for update in data.get("result", []):
+                    handle_telegram_update(update)
+                    offset = update.get("update_id", 0) + 1
+        except Exception as exc:
+            log.error("Erreur polling Telegram : %s", exc)
+        time.sleep(1)
 
 def run_cycle(state):
     agents = fetch_new_agents()
@@ -223,22 +305,22 @@ def run_cycle(state):
         volume = agent.get("volume24h", 0.0)
         if volume >= VOLUME_THRESHOLD_USD:
             message = build_message(agent)
-            if send_telegram(message):
-                seen[key] = str(agent.get("createdAt") or time.time())
-                alerts += 1
-                log.info("Alerte : %s ($%s) vol=%.0f$ chain=%s", agent.get("name"), agent.get("symbol"), volume, agent.get("chain"))
-                save_state(state)
+            users = get_active_users()
+            for user in users:
+                if send_telegram(user["chat_id"], message):
+                    alerts += 1
+                    log.info("Alerte envoyée à %s : %s ($%s)", user["user_id"], agent.get("name"), agent.get("symbol"))
                 time.sleep(TELEGRAM_PAUSE_S)
-            else:
-                log.error("Alerte NON envoyée pour %s", agent.get("name"))
-        
+            seen[key] = str(agent.get("createdAt") or time.time())
+            save_state(state)
+
     if alerts == 0:
         log.info("Cycle terminé : %d agents scannés, aucun nouveau > seuil.", len(agents))
-    save_state(state)
+    log.info("Cycle : %d alertes envoyées à %d users.", alerts, len(get_active_users()))
 
 def main():
-    if not BOT_TOKEN or not CHAT_ID:
-        log.critical("BOT_TOKEN et CHAT_ID doivent être définis. Arrêt.")
+    if not BOT_TOKEN:
+        log.critical("BOT_TOKEN doit être défini. Arrêt.")
         sys.exit(1)
 
     def _shutdown(signum, _frame):
@@ -250,8 +332,13 @@ def main():
 
     state = load_state()
     interval_s = min(120.0, max(10.0, POLL_INTERVAL_SECONDS))
-    log.info("Démarrage (API Virtuals) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
+    
+    log.info("Démarrage (API Virtuals Multi-User) — polling toutes les %.0f sec, seuil %.0f$.", interval_s, VOLUME_THRESHOLD_USD)
+    log.info("Users actuels : %d", len(load_users()))
 
+    import threading
+    tg_thread = threading.Thread(target=process_telegram_updates, daemon=True)
+    tg_thread.start()
 
     while True:
         try:
