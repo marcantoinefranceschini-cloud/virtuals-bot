@@ -106,7 +106,7 @@ def add_user(chat_id):
     try:
         conn = db_pool.getconn()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (chat_id) VALUES (%s) ON CONFLICT DO NOTHING")
+        cursor.execute("INSERT INTO users (chat_id) VALUES (%s) ON CONFLICT DO NOTHING", (chat_id,))
         cursor.execute("UPDATE users SET active = TRUE WHERE chat_id = %s", (chat_id,))
         conn.commit()
         cursor.close()
