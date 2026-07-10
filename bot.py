@@ -60,34 +60,33 @@ def build_session():
     return session
 
 SESSION = build_session()
+from supabase import create_client
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
+def load_users():
+    """Load users from Supabase"""
+    return get_active_users()
 
 def get_active_users():
     """Get users from Supabase"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    if not supabase:
         return []
     try:
-        resp = requests.get(
-            f"{SUPABASE_URL}/rest/v1/users?select=chat_id",
-            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        )
-        if resp.status_code == 200:
-            return [row["chat_id"] for row in resp.json()]
+        resp = supabase.table('users').select('chat_id').execute()
+        return [row['chat_id'] for row in resp.data]
     except Exception as e:
         log.error(f"Error getting users: {e}")
-    return []
+        return []
 
 def add_user(chat_id):
     """Add user to Supabase"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    if not supabase:
         return False
     try:
-        requests.post(
-            f"{SUPABASE_URL}/rest/v1/users",
-            json={"chat_id": chat_id},
-            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
-        )
+        supabase.table('users').upsert({'chat_id': chat_id}).execute()
         log.info(f"✅ User {chat_id} added")
         return True
     except Exception as e:
@@ -96,23 +95,15 @@ def add_user(chat_id):
 
 def remove_user(chat_id):
     """Remove user from Supabase"""
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    if not supabase:
         return False
     try:
-        requests.delete(
-            f"{SUPABASE_URL}/rest/v1/users?chat_id=eq.{chat_id}",
-            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        )
+        supabase.table('users').delete().eq('chat_id', chat_id).execute()
         log.info(f"✅ User {chat_id} removed")
         return True
     except Exception as e:
         log.error(f"Error removing user: {e}")
         return False
-
-def load_users():
-    """Load users from Supabase"""
-    return get_active_users()
-
 
 def record_alert(token_name, token_symbol):
     """Record alert"""
@@ -134,42 +125,6 @@ def safe_float(value, default=0.0):
 def safe_str(value, default=""):
     return value if isinstance(value, str) else default
 
-def load_users():
-    if USERS_FILE.exists():
-        try:
-            users = json.loads(USERS_FILE.read_text(encoding="utf-8"))
-            if isinstance(users, list):
-                return users
-        except (json.JSONDecodeError, OSError) as exc:
-            log.error("Fichier users corrompu (%s) — réinitialisation.", exc)
-    return []
-
-def save_users(users):
-    tmp = USERS_FILE.with_suffix(".tmp")
-    try:
-        tmp.write_text(json.dumps(users, indent=2), encoding="utf-8")
-        tmp.replace(USERS_FILE)
-    except OSError as exc:
-        log.error("Impossible d'écrire users : %s", exc)
-
-def add_user(user_id, chat_id):
-    users = load_users()
-    if not any(u["user_id"] == user_id for u in users):
-        users.append({"user_id": user_id, "chat_id": chat_id, "active": True})
-        save_users(users)
-        log.info("User enregistré : %s (chat_id=%s)", user_id, chat_id)
-        return True
-    return False
-
-def remove_user(user_id):
-    users = load_users()
-    users = [u for u in users if u["user_id"] != user_id]
-    save_users(users)
-    log.info("User supprimé : %s", user_id)
-
-def get_active_users():
-    users = load_users()
-    return [u for u in users if u.get("active", True)]
 
 def fetch_page(page):
     params = {
