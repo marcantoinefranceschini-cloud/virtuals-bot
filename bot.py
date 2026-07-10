@@ -75,35 +75,45 @@ def get_active_users():
     if not supabase:
         return []
     try:
-        resp = supabase.table('users').select('chat_id').execute()
-        return [row['chat_id'] for row in resp.data]
+        resp = supabase.table('users').select('chat_id').eq('active', True).execute()
+        return [row['chat_id'] for row in resp.data] if resp.data else []
     except Exception as e:
         log.error(f"Error getting users: {e}")
         return []
+
 
 def add_user(chat_id):
     """Add user to Supabase"""
     if not supabase:
         return False
     try:
-        supabase.table('users').upsert({'chat_id': chat_id}).execute()
-        log.info(f"✅ User {chat_id} added")
+        # Check if exists
+        resp = supabase.table('users').select('chat_id').eq('chat_id', chat_id).execute()
+        if resp.data:
+            log.info(f"✓ User {chat_id} already exists")
+            return False  # Already exists
+        
+        # Add new user
+        supabase.table('users').insert({'chat_id': chat_id, 'active': True}).execute()
+        log.info(f"✓ User {chat_id} added")
         return True
     except Exception as e:
         log.error(f"Error adding user: {e}")
         return False
+
 
 def remove_user(chat_id):
     """Remove user from Supabase"""
     if not supabase:
         return False
     try:
-        supabase.table('users').delete().eq('chat_id', chat_id).execute()
-        log.info(f"✅ User {chat_id} removed")
+        supabase.table('users').update({'active': False}).eq('chat_id', chat_id).execute()
+        log.info(f"✓ User {chat_id} removed")
         return True
     except Exception as e:
         log.error(f"Error removing user: {e}")
         return False
+
 
 def record_alert(token_name, token_symbol):
     """Record alert"""
