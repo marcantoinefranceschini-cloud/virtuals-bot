@@ -204,7 +204,7 @@ def run_cycle(state):
 
     seen = state["seen"]
 
-        if not state.get("initialized"):
+    if not state.get("initialized"):
         for agent in agents:
             volume = agent.get("volume24h", 0.0)
             if volume >= VOLUME_THRESHOLD_USD:
