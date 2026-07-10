@@ -229,9 +229,7 @@ def run_cycle(state):
                 time.sleep(TELEGRAM_PAUSE_S)
             else:
                 log.error("Alerte NON envoyée pour %s", agent.get("name"))
-        else:
-            seen[key] = str(agent.get("createdAt") or time.time())
-
+        
     if alerts == 0:
         log.info("Cycle terminé : %d agents scannés, aucun nouveau > seuil.", len(agents))
     save_state(state)
