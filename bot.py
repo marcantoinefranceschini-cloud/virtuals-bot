@@ -343,41 +343,24 @@ def build_message(agent):
     # Security Score
     score = calculate_risk_score(agent)
     
-    # Socials - Project Twitter
-    project_twitter = agent.get("socials", {}).get("TWITTER", "N/A")
+    # Project Twitter
+    project_twitter = "N/A"
+    if agent.get("socials") and agent.get("socials").get("VERIFIED_LINKS"):
+        project_twitter = agent.get("socials", {}).get("VERIFIED_LINKS", {}).get("TWITTER", "N/A")
     
     # Creator info
     creator_info = agent.get("creator", {})
-    creator_name_and_bio = creator_info.get("description", "N/A")
-    creator_twitter = creator_info.get("socials", {}).get("TWITTER", "N/A")
+    creator_name = creator_info.get("displayName", "N/A")
+    creator_twitter = "N/A"
+    if creator_info.get("socials") and creator_info.get("socials").get("VERIFIED_LINKS"):
+        creator_twitter = creator_info.get("socials", {}).get("VERIFIED_LINKS", {}).get("TWITTER", "N/A")
     
     # About
     about = escape_markdown(safe_str(agent.get("description"), "N/A"))
     
     # Format numbers
     mcap_line = f"📊 Market cap : {format_num(mcap)} $VIRTUAL\n" if mcap is not None else ""
-    holders_str = format_num(holders) if holders != "N/A" else "N/A"
-    top10_str = f"{top10_pct}%" if top10_pct != "N/A" else "N/A"
-    liquidity_str = f"${format_num(liquidity)}" if liquidity != "N/A" else "N/A"
-    dev_str = f"{dev_holding}%" if dev_holding != "N/A" else "N/A"
-
-    return (
-        f"🆕 {name} (${ticker})\n"
-        f"⛓ Chain : {chain}\n"
-        f"💧 Volume 24h : {format_num(volume)}$\n"
-        f"{mcap_line}\n"
-        f"📊 Analysis:\n"
-        f"👥 Holders : {holders_str}\n"
-        f"📈 Top 10% : {top10_str}\n"
-        f"💰 Liquidity : {liquidity_str}\n"
-        f"👨‍💼 Dev Holdings : {dev_str}\n\n"
-        f"🚩 Security Score : {score}/10\n\n"
-        f"🐦 Project Twitter : {project_twitter}\n"
-        f"👤 Creator : {creator_name_and_bio}\n"
-        f"🐦 Creator Twitter : {creator_twitter}\n\n"
-        f"📝 About : {about}\n\n"
-        f"🔗 {link}"
-    )
+    holders_str = format_
 
 
 
