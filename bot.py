@@ -472,17 +472,16 @@ def handle_telegram_update(update):
 
     # /setthreshold command
 
-elif text.startswith("/setthreshold"):
-    if len(text) > 14:
-        try:
-            amount_str = text[14:].strip()
-            amount = float(amount_str)
-            if set_user_threshold(chat_id, amount):
-                send_telegram(user_id, f"Seuil: {amount}$")
-            else:
-                send_telegram(user_id, "Erreur")
-        except:
-            send_telegram(user_id, "Utilise: /setthreshold 1000")
+elif text.startswith("/setthreshold "):
+    try:
+        amount_str = text.split(" ", 1)[1].strip()
+        amount = float(amount_str)
+        if set_user_threshold(chat_id, amount):
+            send_telegram(user_id, f"Seuil: {amount}$")
+        else:
+            send_telegram(user_id, "Erreur")
+    except:
+        send_telegram(user_id, "Utilise: /setthreshold 2000")
 
 def process_telegram_updates():
     offset = 0
