@@ -501,21 +501,22 @@ def handle_telegram_update(update):
             send_telegram(user_id, stats_text)
 
     # /setthreshold command
-        elif text.startswith("/setthreshold"):
-            if text == "/setthreshold":
+        elif text == "/setthreshold":
             send_threshold_buttons(user_id)
-            else:
-                try:
-            amount_str = text.replace("/setthreshold ", "").strip()
-            amount = float(amount_str)
-            if amount < 0:
-                send_telegram(user_id, "❌ Le seuil doit être positif !")
-            elif set_user_threshold(chat_id, amount):
-                send_telegram(user_id, f"✅ Seuil changé à {amount}$ !")
-            else:
-                send_telegram(user_id, "❌ Erreur lors du changement du seuil.")
-        except ValueError:
-            send_telegram(user_id, "❌ Format invalide. Utilise : /setthreshold 500")
+
+        elif text.startswith("/setthreshold "):
+            try:
+                amount_str = text.split(" ", 1)[1].strip()
+                amount = float(amount_str)
+                if amount < 0:
+                    send_telegram(user_id, "Format invalide")
+                elif set_user_threshold(chat_id, amount):
+                    send_telegram(user_id, f"Seuil: {amount}$")
+                else:
+                    send_telegram(user_id, "Erreur")
+            except:
+                send_telegram(user_id, "Utilise: /setthreshold 500")
+
 
 def handle_callback_query(update):
     """Handle button clicks (callback queries)"""
