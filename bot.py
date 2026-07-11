@@ -416,7 +416,6 @@ def set_user_threshold(chat_id, threshold):
         log.error(f"Error setting threshold: {e}")
         return False
 
-
 def handle_telegram_update(update):
     message = update.get("message", {})
     text = safe_str(message.get("text", "")).strip()
@@ -471,19 +470,34 @@ def handle_telegram_update(update):
             send_telegram(user_id, stats_text)
 
     # /setthreshold command
+    elif text.startswith("/setthreshold "):
+        try:
+            amount_str = text.replace("/setthreshold ", "").strip()
+            amount = float(amount_str)
+            if amount < 0:
+                send_telegram(user_id, "❌ Le seuil doit être positif !")
+            elif set_user_threshold(chat_id, amount):
+                send_telegram(user_id, f"✅ Seuil changé à {amount}$ !")
+            else:
+                send_telegram(user_id, "❌ Erreur lors du changement du seuil.")
+        except ValueError:
+            send_telegram(user_id, "❌ Format invalide. Utilise : /setthreshold 500")
 
-elif text.startswith("/setthreshold "):
-    try:
-        amount_str = text.replace("/setthreshold ", "").strip()
-        amount = float(amount_str)
-        if amount < 0:
-            send_telegram(user_id, "Le seuil doit être positif !")
-        elif set_user_threshold(chat_id, amount):
-            send_telegram(user_id, f"Seuil changé à {amount}$ !")
-        else:
-            send_telegram(user_id, "Erreur lors du changement du seuil.")
-    except ValueError:
-        send_telegram(user_id, "Format invalide. Utilise : /setthreshold 500")
+
+def process_telegram_updates():
+    offset = 0
+    while True:
+        try:
+            url = TELEGRAM_API.format(token=BOT_TOKEN, method="getUpdates")
+            resp = SESSION.get(url, params={"offset": offset, "timeout": 30}, timeout=35)
+            data = resp.json()
+            if data.get("ok"):
+                for update in data.get("result", []):
+                    handle_telegram_update(update)
+                    offset = update.get("update_id", 0) + 1
+        except Exception as exc:
+            log.error("Erreur polling Telegram : %s", exc)
+        time.sleep(1)
 
 # ============= MAIN CYCLE =============
 
