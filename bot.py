@@ -6,7 +6,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-
+ 
 import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
