@@ -189,57 +189,45 @@ def fetch_page(page):
     return data
 
 def calculate_risk_score(item):
-    """Calculate a security/confidence score (0-10) for a token"""
     score = 0
     
-    # 1. Top 10 Holder Percentage (max 2 pts)
-    top10_pct = item.get("top10HolderPercentage", 100)
-    if top10_pct is not None:
-        if top10_pct < 20:
-            score += 2
-        elif top10_pct < 40:
-            score += 1.5
-        elif top10_pct < 60:
-            score += 1
-        elif top10_pct < 80:
-            score += 0.5
+    # 1. Top 10 Holder % (max 2 pts)
+    top10 = item.get("top10HolderPercentage") or 0
+    if top10 < 50:
+        score += 2
+    elif top10 < 80:
+        score += 1
     
     # 2. Holder Count (max 2 pts)
-    holder_count = item.get("holderCount") or 0
-    if holder_count and holder_count > 10000:
+    holders = item.get("holderCount") or 0
+    if holders > 100:
         score += 2
-    elif holder_count > 5000:
-        score += 1.5
-    elif holder_count > 1000:
+    elif holders > 50:
         score += 1
     
     # 3. Liquidity USD (max 2 pts)
     liquidity = item.get("liquidityUsd") or 0
-    if liquidity and liquidity > 100000:
+    if liquidity > 50000:
         score += 2
-    elif liquidity > 50000:
-        score += 1.5
     elif liquidity > 10000:
         score += 1
     
-    # 4. Dev Holding Percentage (max 2 pts)
-    dev_holding = item.get("devHoldingPercentage", 50)
-    if dev_holding is not None:
-        if dev_holding == 0:
-            score += 2
-        elif dev_holding < 10:
-            score += 1.5
-        elif dev_holding < 30:
-            score += 1
+    # 4. Dev Holding % (max 2 pts)
+    dev_hold = item.get("devHoldingPercentage") or 0
+    if dev_hold == 0:
+        score += 2
+    elif dev_hold < 10:
+        score += 1.5
+    elif dev_hold < 30:
+        score += 1
     
     # 5. Token Age (max 2 pts)
-    launched_at = item.get("launchedAt")
-    if launched_at:
-        from datetime import datetime, timedelta
+    launched = item.get("launchedAt")
+    if launched:
+        from datetime import datetime
         try:
-            launch_time = datetime.fromisoformat(launched_at.replace('Z', '+00:00'))
+            launch_time = datetime.fromisoformat(launched.replace('Z', '+00:00'))
             age_hours = (datetime.now(launch_time.tzinfo) - launch_time).total_seconds() / 3600
-            
             if age_hours > 24:
                 score += 2
             elif age_hours > 12:
@@ -249,12 +237,12 @@ def calculate_risk_score(item):
         except:
             pass
     
-    # 6. Verified Status (max 1 pt)
+    # 6. isVerified (bonus 1 pt)
     if item.get("isVerified"):
         score += 1
     
-    # Cap at 10
     return min(10, round(score, 1))
+
 
 def get_risk_emoji(score):
     """Get emoji based on risk score"""
