@@ -502,7 +502,7 @@ def handle_telegram_update(update):
 
     # /setthreshold command
         elif text == "/setthreshold":
-             send_threshold_buttons(user_id)
+            send_threshold_buttons(user_id)
 
 elif text.startswith("/setthreshold "):
     try:
