@@ -502,10 +502,10 @@ def handle_telegram_update(update):
 
     # /setthreshold command
         elif text.startswith("/setthreshold"):
-    if text == "/setthreshold":
-        send_threshold_buttons(user_id)
-    else:
-        try:
+            if text == "/setthreshold":
+            send_threshold_buttons(user_id)
+            else:
+                try:
             amount_str = text.replace("/setthreshold ", "").strip()
             amount = float(amount_str)
             if amount < 0:
