@@ -503,8 +503,7 @@ def handle_telegram_update(update):
     # /setthreshold command
         elif text == "/setthreshold":
             send_threshold_buttons(user_id)
-
-elif text.startswith('/setthreshold '):
+elif text.startswith("/setthreshold "):
     try:
         amount_str = text.replace("/setthreshold ", "").strip()
         amount = float(amount_str)
