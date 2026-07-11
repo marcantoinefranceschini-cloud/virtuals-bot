@@ -360,7 +360,8 @@ def build_message(agent):
     top10_str = f"{top10_pct}%" if top10_pct != "N/A" else "N/A"
     liquidity_str = f"${format_num(liquidity)}" if liquidity != "N/A" else "N/A"
     dev_str = f"{dev_holding}%" if dev_holding != "N/A" else "N/A"
-    
+    log.info(f"DEBUG Agent: name={agent.get('name')}, creator={agent.get('creator')}, socials={agent.get('socials')}")
+
     return (
         f"🆕 {name} (${ticker})\n"
         f"⛓ Chain : {chain}\n"
