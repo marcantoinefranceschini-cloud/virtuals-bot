@@ -564,7 +564,7 @@ def process_telegram_updates():
             if data.get("ok"):
                 for update in data.get("result", []):
                     handle_telegram_update(update)
-                    handle_callback_query(update)  ← AJOUTE CETTE LIGNE
+                    handle_callback_query(update)
                     offset = update.get("update_id", 0) + 1
         except Exception as exc:
             log.error("Erreur polling Telegram : %s", exc)
