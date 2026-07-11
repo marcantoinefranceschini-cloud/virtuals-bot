@@ -205,8 +205,8 @@ def calculate_risk_score(item):
             score += 0.5
     
     # 2. Holder Count (max 2 pts)
-    holder_count = item.get("holderCount", 0)
-    if holder_count > 10000:
+    holder_count = item.get("holderCount") or 0
+    if holder_count and holder_count > 10000:
         score += 2
     elif holder_count > 5000:
         score += 1.5
@@ -214,8 +214,8 @@ def calculate_risk_score(item):
         score += 1
     
     # 3. Liquidity USD (max 2 pts)
-    liquidity = item.get("liquidityUsd", 0)
-    if liquidity > 100000:
+    liquidity = item.get("liquidityUsd") or 0
+    if liquidity and liquidity > 100000:
         score += 2
     elif liquidity > 50000:
         score += 1.5
