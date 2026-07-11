@@ -416,6 +416,37 @@ def set_user_threshold(chat_id, threshold):
         log.error(f"Error setting threshold: {e}")
         return False
 
+def send_threshold_buttons(user_id):
+    """Send inline buttons for threshold selection"""
+    if not supabase:
+        return
+    
+    message = "💰 *Quel seuil veux-tu ?*"
+    
+    url = TELEGRAM_API.format(token=BOT_TOKEN, method="sendMessage")
+    payload = {
+        "chat_id": user_id,
+        "text": message,
+        "parse_mode": "Markdown",
+        "reply_markup": {
+            "inline_keyboard": [
+                [
+                    {"text": "1000$", "callback_data": "threshold_1000"},
+                    {"text": "2000$", "callback_data": "threshold_2000"},
+                    {"text": "4000$", "callback_data": "threshold_4000"},
+                ],
+                [
+                    {"text": "Custom 🎯", "callback_data": "threshold_custom"}
+                ]
+            ]
+        }
+    }
+    
+    try:
+        SESSION.post(url, json=payload, timeout=20)
+    except Exception as e:
+        log.error(f"Error sending threshold buttons: {e}")
+
 def handle_telegram_update(update):
     message = update.get("message", {})
     text = safe_str(message.get("text", "")).strip()
@@ -470,19 +501,58 @@ def handle_telegram_update(update):
             send_telegram(user_id, stats_text)
 
     # /setthreshold command
-    elif text.startswith("/setthreshold "):
-        try:
-            amount_str = text.replace("/setthreshold ", "").strip()
-            amount = float(amount_str)
-            if amount < 0:
-                send_telegram(user_id, "❌ Le seuil doit être positif !")
-            elif set_user_threshold(chat_id, amount):
-                send_telegram(user_id, f"✅ Seuil changé à {amount}$ !")
-            else:
-                send_telegram(user_id, "❌ Erreur lors du changement du seuil.")
-        except ValueError:
-            send_telegram(user_id, "❌ Format invalide. Utilise : /setthreshold 500")
+    elif text == "/setthreshold":
+    send_threshold_buttons(user_id)
 
+elif text.startswith("/setthreshold "):
+    try:
+        amount_str = text.replace("/setthreshold ", "").strip()
+        amount = float(amount_str)
+        if amount < 0:
+            send_telegram(user_id, "❌ Le seuil doit être positif !")
+        elif set_user_threshold(chat_id, amount):
+            send_telegram(user_id, f"✅ Seuil changé à {amount}$ !")
+        else:
+            send_telegram(user_id, "❌ Erreur lors du changement du seuil.")
+    except ValueError:
+        send_telegram(user_id, "❌ Format invalide. Utilise : /setthreshold 500")
+
+
+def handle_callback_query(update):
+    """Handle button clicks (callback queries)"""
+    callback_query = update.get("callback_query", {})
+    data = callback_query.get("data", "")
+    user_id = callback_query.get("from", {}).get("id")
+    chat_id = callback_query.get("message", {}).get("chat", {}).get("id")
+    query_id = callback_query.get("id")
+    
+    if not user_id or not data:
+        return
+    
+    # Handle threshold buttons
+    if data.startswith("threshold_"):
+        threshold_value = data.replace("threshold_", "")
+        
+        if threshold_value == "custom":
+            # Ask for custom amount
+            send_telegram(user_id, "💰 Quel montant tu veux ? (ex: 2500)")
+        else:
+            # Set predefined threshold
+            try:
+                amount = int(threshold_value)
+                if set_user_threshold(chat_id, amount):
+                    send_telegram(user_id, f"✅ Seuil changé à {amount}$ !")
+                else:
+                    send_telegram(user_id, "❌ Erreur lors du changement du seuil.")
+            except ValueError:
+                send_telegram(user_id, "❌ Erreur lors de la conversion.")
+        
+        # Answer the callback query to remove the loading state
+        url = TELEGRAM_API.format(token=BOT_TOKEN, method="answerCallbackQuery")
+        try:
+            SESSION.post(url, json={"callback_query_id": query_id}, timeout=20)
+        except:
+            pass
 
 def process_telegram_updates():
     offset = 0
@@ -494,6 +564,7 @@ def process_telegram_updates():
             if data.get("ok"):
                 for update in data.get("result", []):
                     handle_telegram_update(update)
+                    handle_callback_query(update)  ← AJOUTE CETTE LIGNE
                     offset = update.get("update_id", 0) + 1
         except Exception as exc:
             log.error("Erreur polling Telegram : %s", exc)
