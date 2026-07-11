@@ -501,18 +501,7 @@ def handle_telegram_update(update):
             send_telegram(user_id, stats_text)
 
     # /setthreshold command
-        elif text.startswith("/setthreshold "):
-            parts = text.split()
-            if len(parts) == 2:
-                try:
-                    amount = float(parts[1])
-                    if set_user_threshold(chat_id, amount):
-                        send_telegram(user_id, f"Seuil: {amount}$") 
-                    else:
-                        send_telegram(user_id, "Erreur") 
-                except:
-                    send_telegram(user_id, "Format: /setthreshold 1000")
-
+        
 
 
 def handle_callback_query(update):
