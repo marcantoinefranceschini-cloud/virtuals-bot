@@ -6,7 +6,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-  
+
 import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
@@ -330,48 +330,34 @@ def build_message(agent):
     volume = agent.get("volume24h", 0.0)
     mcap = agent.get("mcapVirtual")
     chain = escape_markdown(safe_str(agent.get("chain"), "?"))
+    ca = agent.get("tokenAddress", "N/A")
     agent_id = agent.get("id")
+    risk_score = agent.get("risk_score", 0)
+    risk_emoji = get_risk_emoji(risk_score)
+    
+    holders = agent.get("holderCount", 0)
+    top10_pct = agent.get("top10HolderPercentage", 0)
+    liquidity = agent.get("liquidityUsd", 0)
+    dev_holding = agent.get("devHoldingPercentage", 0)
+    
     link = f"https://app.virtuals.io/virtuals/{agent_id}" if agent_id else f"https://app.virtuals.io"
-    
-    holders = agent.get("holderCount", "N/A")
-    top10_pct = agent.get("top10HolderPercentage", "N/A")
-    liquidity = agent.get("liquidityUsd", "N/A")
-    dev_holding = agent.get("devHoldingPercentage", "N/A")
-    
-    score = calculate_risk_score(agent)
-    
-    project_twitter = "N/A"
-    if agent.get("socials") and agent.get("socials").get("VERIFIED_LINKS"):
-        project_twitter = agent.get("socials", {}).get("VERIFIED_LINKS", {}).get("TWITTER", "N/A")
-    
-    creator_info = agent.get("creator", {})
-    creator_name = creator_info.get("displayName", "N/A")
-    creator_twitter = "N/A"
-    if creator_info.get("socials") and creator_info.get("socials").get("VERIFIED_LINKS"):
-        creator_twitter = creator_info.get("socials", {}).get("VERIFIED_LINKS", {}).get("TWITTER", "N/A")
-    
-    about = escape_markdown(safe_str(agent.get("description"), "N/A"))
-    
+
     mcap_line = f"📊 Market cap : {format_num(mcap)} $VIRTUAL\n" if mcap is not None else ""
-    holders_str = format_num(holders) if holders != "N/A" else "N/A"
-    top10_str = f"{top10_pct}%" if top10_pct != "N/A" else "N/A"
-    liquidity_str = f"${format_num(liquidity)}" if liquidity != "N/A" else "N/A"
-    dev_str = f"{dev_holding}%" if dev_holding != "N/A" else "N/A"
-    
+
     return (
-        f"🆕 {name} (${ticker})\n"
+        f"🆕 *{name}* (${ticker})\n"
         f"⛓ Chain : {chain}\n"
         f"💧 Volume 24h : {format_num(volume)}$\n"
-        f"{mcap_line}\n"
-        f"📊 Analysis:\n"
-        f"👥 Holders : {holders_str}\n"
-        f"📈 Top 10% : {top10_str}\n"
-        f"💰 Liquidity : {liquidity_str}\n"
-        f"👨‍💼 Dev Holdings : {dev_str}\n\n"
-        f"🚩 Security Score : {score}/10\n\n
-        f"🔗 {link}"
+        f"{mcap_line}"
+        f"🔗 CA : `{ca}`\n\n"
+        f"📊 *Analysis:*\n"
+        f"👥 Holders : {format_num(holders)}\n"
+        f"📈 Top 10% : {top10_pct:.2f}%\n"
+        f"💰 Liquidity : ${format_num(liquidity)}\n"
+        f"👨‍💼 Dev Holdings : {dev_holding:.2f}%\n\n"
+        f"{risk_emoji} *Security Score : {risk_score}/10*\n"
+        f"👉 {link}"
     )
-
 
 
 def send_telegram(chat_id, text):
