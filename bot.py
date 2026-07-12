@@ -188,32 +188,32 @@ def fetch_page(page):
         raise ValueError(f"Réponse Virtuals inattendue (page {page})")
     return data
 
-def calculate_risk_score(item):
+def calculate_risk_score(agent):
     score = 0
     
     # 1. Top 10 Holder % (max 2 pts)
-    top10 = item.get("top10HolderPercentage") or 0
+    top10 = agent.get("top10HolderPercentage") or 0
     if top10 < 50:
         score += 2
-    elif top10 < 80:
+    elif top10 < 90:
         score += 1
     
     # 2. Holder Count (max 2 pts)
-    holders = item.get("holderCount") or 0
-    if holders > 100:
+    holders = agent.get("holderCount") or 0
+    if holders > 10:
         score += 2
-    elif holders > 50:
+    elif holders > 5:
         score += 1
     
     # 3. Liquidity USD (max 2 pts)
-    liquidity = item.get("liquidityUsd") or 0
-    if liquidity > 50000:
+    liquidity = agent.get("liquidityUsd") or 0
+    if liquidity > 10000:
         score += 2
-    elif liquidity > 10000:
+    elif liquidity > 5000:
         score += 1
     
     # 4. Dev Holding % (max 2 pts)
-    dev_hold = item.get("devHoldingPercentage") or 0
+    dev_hold = agent.get("devHoldingPercentage") or 0
     if dev_hold == 0:
         score += 2
     elif dev_hold < 10:
@@ -222,7 +222,7 @@ def calculate_risk_score(item):
         score += 1
     
     # 5. Token Age (max 2 pts)
-    launched = item.get("launchedAt")
+    launched = agent.get("launchedAt")
     if launched:
         from datetime import datetime
         try:
@@ -238,7 +238,7 @@ def calculate_risk_score(item):
             pass
     
     # 6. isVerified (bonus 1 pt)
-    if item.get("isVerified"):
+    if agent.get("isVerified"):
         score += 1
     
     return min(10, round(score, 1))
