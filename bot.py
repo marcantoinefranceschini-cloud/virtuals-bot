@@ -368,14 +368,9 @@ def build_message(agent):
         f"📈 Top 10% : {top10_str}\n"
         f"💰 Liquidity : {liquidity_str}\n"
         f"👨‍💼 Dev Holdings : {dev_str}\n\n"
-        f"🚩 Security Score : {score}/10\n\n"
-        f"🐦 Project Twitter : {project_twitter}\n"
-        f"👤 Creator : {creator_name}\n"
-        f"🐦 Creator Twitter : {creator_twitter}\n\n"
-        f"📝 About : {about}\n\n"
+        f"🚩 Security Score : {score}/10\n\n
         f"🔗 {link}"
     )
-
 
 
 
