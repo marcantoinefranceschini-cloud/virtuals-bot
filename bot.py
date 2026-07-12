@@ -192,7 +192,7 @@ def calculate_risk_score(agent):
     score = 0
     # Red flag: si concentration extrême
     if agent.get("top10HolderPercentage") is not None and agent.get("top10HolderPercentage") >= 95:
-    return 1  
+        return 1  
 
     # 1. Top 10 Holder % (max 2 pts)
     top10 = agent.get("top10HolderPercentage") or 0
