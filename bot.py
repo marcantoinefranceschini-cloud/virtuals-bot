@@ -474,6 +474,7 @@ def process_telegram_updates():
 # ============= MAIN CYCLE =============
 
 def run_cycle(state):
+    state["seen"] = {}
     agents = fetch_new_agents()
     log.info(f"📊 Tokens trouvés: {len(agents)}")
     for agent in agents[:10]:  # Affiche les 10 premiers
