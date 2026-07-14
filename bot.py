@@ -496,26 +496,30 @@ def run_cycle(state):
     alerts = 0
     active_users = get_active_users()
     
-    for agent in agents:
-        key = agent["tokenAddress"].lower()
-        if key in seen:
-            continue
-
-        volume = agent.get("volume24h", 0.0)
-        
-        # Envoyer à chaque user selon SON seuil
-        for chat_id in active_users:
-            user_threshold = get_user_threshold(chat_id)
-            if volume >= user_threshold:
-                log.info(f"✅ {agent.get('name')} - Volume ${volume} >= Seuil")
-                message = build_message(agent)
-                record_alert(agent.get("name"), agent.get("symbol"))
-                
-                if send_telegram(chat_id, message):
-                    alerts += 1
-                    log.info("Alerte envoyée à %s : %s ($%s)", chat_id, agent.get("name"), agent.get("symbol"))
-                time.sleep(TELEGRAM_PAUSE_S)
-        
+   for agent in agents:
+    key = agent["tokenAddress"].lower()
+    if key in seen:
+        continue
+    
+    volume = agent.get("volume24h", 0)
+    alert_sent = False
+    
+    # Envoyer à chaque user selon SON seuil
+    for chat_id in active_users:
+        user_threshold = get_user_threshold(chat_id)
+        if volume >= user_threshold:
+            message = build_message(agent)
+            record_alert(agent.get("name"), agent.get("symbol"))
+            
+            if send_telegram(chat_id, message):
+                alerts += 1
+                alert_sent = True
+                log.info(f"Alerte envoyée à {chat_id} : {agent.get('name')} (${agent.get('symbol')})")
+            
+            time.sleep(TELEGRAM_PAUSE_S)
+    
+    # SEULEMENT si une alerte a été envoyée, on marque comme vu
+    if alert_sent:
         seen[key] = str(agent.get("createdAt") or time.time())
         save_state(state)
 
