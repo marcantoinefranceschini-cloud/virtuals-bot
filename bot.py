@@ -173,9 +173,9 @@ def format_num(value):
 
 def fetch_page(page):
     params = {
-        "filters[status]": 1, 
-        "sort[0]": "createdAt:desc",
-        "sort[1]": "volume24h:desc",
+        "filters[status]": 5, 
+        "sort[0]": "volume24h:desc",
+        "sort[1]": "createdAt:desc",
         "populate[0]": "image",
         "pagination[page]": page,
         "pagination[pageSize]": 25,
