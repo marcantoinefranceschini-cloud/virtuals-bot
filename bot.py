@@ -497,12 +497,12 @@ def run_cycle(state):
     active_users = get_active_users()
     
     for agent in agents:
-    key = agent["tokenAddress"].lower()
-    if key in seen:
-        continue
+        key = agent["tokenAddress"].lower()
+        if key in seen:
+            continue
     
-    volume = agent.get("volume24h", 0)
-    alert_sent = False
+        volume = agent.get("volume24h", 0)
+        alert_sent = False
     
     # Envoyer à chaque user selon SON seuil
     for chat_id in active_users:
