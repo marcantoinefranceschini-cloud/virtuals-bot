@@ -476,8 +476,8 @@ def process_telegram_updates():
 def run_cycle(state):
     agents = fetch_new_agents()
     log.info(f"📊 Tokens trouvés: {len(agents)}")
- for agent in agents[:10]:  # Affiche les 10 premiers
-    log.info(f"Token: {agent.get('name')} - Volume: ${agent.get('volume24h')} - Chain: {agent.get('chain')}")
+    for agent in agents[:10]:  # Affiche les 10 premiers
+        log.info(f"Token: {agent.get('name')} - Volume: ${agent.get('volume24h')} - Chain: {agent.get('chain')}")
     if not agents:
         log.warning("Aucun agent récupéré ce cycle.")
         return
