@@ -475,6 +475,7 @@ def process_telegram_updates():
 
 def run_cycle(state):
     agents = fetch_new_agents()
+    log.info(f"📊 Tokens trouvés: {len(agents)}")
     if not agents:
         log.warning("Aucun agent récupéré ce cycle.")
         return
@@ -506,6 +507,7 @@ def run_cycle(state):
         for chat_id in active_users:
             user_threshold = get_user_threshold(chat_id)
             if volume >= user_threshold:
+                log.info(f"✅ {agent.get('name')} - Volume ${volume} >= Seuil")
                 message = build_message(agent)
                 record_alert(agent.get("name"), agent.get("symbol"))
                 
