@@ -328,39 +328,21 @@ def save_state(state):
 # ============= MESSAGE FUNCTIONS =============
 
 def build_message(agent):
-    name = escape_markdown(safe_str(agent.get("name"), "?"))
-    ticker = escape_markdown(safe_str(agent.get("symbol"), "?"))
-    volume = agent.get("volume24h", 0.0)
-    mcap = agent.get("mcapVirtual")
-    chain = escape_markdown(safe_str(agent.get("chain"), "?"))
+    name = agent.get("name", "?")
+    ticker = agent.get("symbol", "?")
+    chain = agent.get("chain", "?")
+    volume = agent.get("volume24h", 0)
     ca = agent.get("tokenAddress", "N/A")
     agent_id = agent.get("id")
-    risk_score = agent.get("risk_score", 0)
-    risk_emoji = get_risk_emoji(risk_score)
+    link = f"https://app.virtuals.io/virtuals/{agent_id}" if agent_id else "https://app.virtuals.io"
     
-    holders = agent.get("holderCount", 0)
-    top10_pct = agent.get("top10HolderPercentage", 0)
-    liquidity = agent.get("liquidityUsd", 0)
-    dev_holding = agent.get("devHoldingPercentage", 0)
-    
-    link = f"https://app.virtuals.io/virtuals/{agent_id}" if agent_id else f"https://app.virtuals.io"
-
-    mcap_line = f"📊 Market cap : {format_num(mcap)} $VIRTUAL\n" if mcap is not None else ""
-
     return (
-        f"🆕 *{name}* (${ticker})\n"
-        f"⛓ Chain : {chain}\n"
-        f"💧 Volume 24h : {format_num(volume)}$\n"
-        f"{mcap_line}"
-        f"🔗 CA : `{ca}`\n\n"
-        f"📊 *Analysis:*\n"
-        f"👥 Holders : {format_num(holders)}\n"
-        f"📊 Top 10% : {top10_pct}%\n" if top10_pct != "N/A" else "📊 Top 10% : N/A\n"        f"💰 Liquidity : ${format_num(liquidity)}\n"
-        f"👨‍💼 Dev Holdings : {dev_holding:.2f}%\n\n"
-        f"{risk_emoji} *Security Score : {risk_score}/10*\n"
-        f"👉 {link}"
+        f"🆕 {name} (${ticker})\n"
+        f"⛓️ Chain : {chain}\n"
+        f"💧 Volume 24h : ${format_num(volume)}\n"
+        f"🔗 CA : `{ca}`\n"
+        f"\n{link}"
     )
-
 
 def send_telegram(chat_id, text):
     url = TELEGRAM_API.format(token=BOT_TOKEN, method="sendMessage")
