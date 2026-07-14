@@ -496,7 +496,7 @@ def run_cycle(state):
     alerts = 0
     active_users = get_active_users()
     
-   for agent in agents:
+    for agent in agents:
     key = agent["tokenAddress"].lower()
     if key in seen:
         continue
