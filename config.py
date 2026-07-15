@@ -19,7 +19,7 @@ VIRTUALS_LIST_URL = os.getenv(
 
 COINGECKO_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price?ids=virtual-protocol&vs_currencies=usd"
 
-POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", 60))
+POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", 15))
 # Vu le rythme de lancement (~25 tokens/30min observé), une fenêtre de 72h
 # avec seulement 100 résultats/page ne couvrirait pas tout. On réduit la
 # fenêtre à 6h: au-delà, un token "nouveau" n'a plus vraiment d'intérêt sniping.
