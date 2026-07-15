@@ -6,7 +6,7 @@ from config import SUPABASE_URL, SUPABASE_KEY, TRACKING_WINDOW_HOURS
 logger = logging.getLogger(__name__)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
+ 
 def upsert_user(chat_id: int):
     existing = supabase.table("users").select("chat_id").eq("chat_id", chat_id).execute()
     if not existing.data:
