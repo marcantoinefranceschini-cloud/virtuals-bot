@@ -40,14 +40,18 @@ def upsert_token(token: dict) -> bool:
         "token_address", token["address"]
     ).execute()
     if not existing.data:
-        supabase.table("tokens").insert({
+        insert_data = {
             "token_address": token["address"],
             "name": token.get("name"),
             "symbol": token.get("symbol"),
             "chain": token.get("chain"),
             "virtuals_url": token.get("virtuals_url"),
             "last_volume_24h": 0,
-        }).execute()
+        }
+        # Vraie date de lancement du token si dispo, sinon Supabase mettra NOW() par défaut
+        if token.get("created_at"):
+            insert_data["first_seen_at"] = token["created_at"]
+        supabase.table("tokens").insert(insert_data).execute()
         return True
     return False
 
