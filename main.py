@@ -138,19 +138,27 @@ async def scan_loop():
             await asyncio.sleep(POLLING_INTERVAL)
 
 
-async def main():
+async def post_init(application: Application):
+    """Appelé par python-telegram-bot juste avant de démarrer le polling,
+    dans la même boucle asyncio qu'il gère lui-même. On y lance notre
+    tâche de fond au lieu d'utiliser asyncio.run() (qui créait un conflit
+    de boucle avec run_polling())."""
+    application.create_task(scan_loop())
+    logger.info("Scan loop programmé")
+
+
+def main():
     global app
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setseuil", set_threshold))
     app.add_handler(CommandHandler("getseuil", get_threshold_cmd))
     app.add_handler(CommandHandler("stop", stop_cmd))
 
-    asyncio.create_task(scan_loop())
     logger.info("Bot polling démarré")
-    await app.run_polling()
+    app.run_polling()  # gère sa propre boucle asyncio, ne pas wrapper dans asyncio.run()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
