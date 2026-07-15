@@ -174,8 +174,19 @@ async def post_init(application: Application):
         BotCommand("getseuil", "Voir ton seuil actuel"),
         BotCommand("stop", "Désactiver les alertes"),
     ])
+    await application.bot.set_my_short_description(
+        "🎯 Alertes Telegram quand un token Virtuals franchit ton seuil de volume 24h"
+    )
+    await application.bot.set_my_description(
+        "🤖 Virtuals Sniper Bot\n\n"
+        "🎯 Alertes personnalisées dès qu'un token Virtuals franchit ton seuil de volume 24h\n\n"
+        "💰 Suivi en temps réel du volume 24h et du marketcap\n\n"
+        "⚙️ Seuil 100% personnalisable selon tes critères\n\n"
+        "🔄 Scan automatique en continu\n\n"
+        "📋 Commandes: /start /setseuil /getseuil /stop"
+    )
     application.create_task(scan_loop())
-    logger.info("Scan loop programmé, menu de commandes mis à jour")
+    logger.info("Scan loop programmé, menu et description mis à jour")
 
 
 def main():
