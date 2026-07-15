@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from datetime import datetime, timezone
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, POLLING_INTERVAL, LOG_LEVEL
 import db
@@ -168,8 +168,14 @@ async def scan_loop():
 async def post_init(application: Application):
     """Appelé par python-telegram-bot juste avant de démarrer le polling,
     dans la même boucle asyncio qu'il gère lui-même."""
+    await application.bot.set_my_commands([
+        BotCommand("start", "Activer le bot / voir l'aide"),
+        BotCommand("setseuil", "Définir ton seuil de volume 24h ($)"),
+        BotCommand("getseuil", "Voir ton seuil actuel"),
+        BotCommand("stop", "Désactiver les alertes"),
+    ])
     application.create_task(scan_loop())
-    logger.info("Scan loop programmé")
+    logger.info("Scan loop programmé, menu de commandes mis à jour")
 
 
 def main():
