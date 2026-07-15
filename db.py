@@ -34,6 +34,18 @@ def get_active_users():
     return result.data or []
 
 
+def get_users_for_new_listings():
+    """Users actifs qui veulent les alertes instantanées de nouveaux tokens"""
+    result = supabase.table("users").select("chat_id").eq(
+        "active", True
+    ).eq("notify_new_listings", True).execute()
+    return result.data or []
+
+
+def set_new_listings_pref(chat_id: int, enabled: bool):
+    supabase.table("users").update({"notify_new_listings": enabled}).eq("chat_id", chat_id).execute()
+
+
 def upsert_token(token: dict) -> bool:
     """True si nouveau token"""
     existing = supabase.table("tokens").select("token_address").eq(
@@ -70,18 +82,18 @@ def get_tracked_tokens():
     return result.data or []
 
 
-def already_alerted(chat_id: int, token_address: str) -> bool:
+def already_alerted(chat_id: int, token_address: str, alert_type: str = "threshold") -> bool:
     result = supabase.table("user_alerts").select("id").eq(
         "chat_id", chat_id
-    ).eq("token_address", token_address).execute()
+    ).eq("token_address", token_address).eq("alert_type", alert_type).execute()
     return len(result.data) > 0
 
 
-def mark_alerted(chat_id: int, token_address: str, volume_24h: float):
+def mark_alerted(chat_id: int, token_address: str, volume_24h: float, alert_type: str = "threshold"):
     try:
         supabase.table("user_alerts").insert({
             "chat_id": chat_id, "token_address": token_address,
-            "volume_24h_at_alert": volume_24h,
+            "volume_24h_at_alert": volume_24h, "alert_type": alert_type,
         }).execute()
     except Exception as e:
         logger.warning(f"mark_alerted skip: {e}")
