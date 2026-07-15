@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from datetime import datetime, timezone
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, POLLING_INTERVAL, LOG_LEVEL
@@ -62,11 +63,36 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===== FORMAT MESSAGE =====
 
+def format_relative_age(iso_timestamp) -> str:
+    """Convertit une date ISO en 'il y a Xs' / 'il y a Xmin' / 'il y a XhYmin'"""
+    if not iso_timestamp:
+        return "âge inconnu"
+    try:
+        ts = iso_timestamp.replace("Z", "+00:00") if isinstance(iso_timestamp, str) else iso_timestamp
+        created = datetime.fromisoformat(ts) if isinstance(ts, str) else ts
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        seconds = int((datetime.now(timezone.utc) - created).total_seconds())
+        if seconds < 0:
+            seconds = 0
+        if seconds < 60:
+            return f"il y a {seconds}s"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"il y a {minutes}min"
+        hours = minutes // 60
+        return f"il y a {hours}h{minutes % 60:02d}"
+    except Exception:
+        return "âge inconnu"
+
+
 def format_alert(token: dict, volume_24h_usd: float, marketcap_usd: float) -> str:
+    age_str = format_relative_age(token.get("first_seen_at"))
     return (
         f"🎯 <b>SEUIL FRANCHI</b>\n\n"
         f"📛 Nom: <b>{token['name']}</b> ({token.get('symbol', '')})\n"
         f"⛓ Chain: <b>{token.get('chain', 'BASE')}</b>\n"
+        f"🕐 Créé: <b>{age_str}</b>\n"
         f"💰 Volume 24h: <b>${volume_24h_usd:,.2f}</b>\n"
         f"📊 Marketcap: <b>${marketcap_usd:,.2f}</b>\n"
         f"📍 CA: <code>{token['token_address']}</code>\n"
