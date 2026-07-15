@@ -122,9 +122,8 @@ async def scan_loop():
             if new_count:
                 logger.info(f"{new_count} nouveaux tokens découverts")
 
-            # 2. Mettre à jour les stats de TOUS les tokens reçus dans ce fetch
+            # 2. Mettre à jour les stats + alerte seuil franchi
             agents_by_address = {a["address"]: a for a in new_agents}
-
             tracked = db.get_tracked_tokens()
             active_users = db.get_active_users()
 
@@ -141,7 +140,7 @@ async def scan_loop():
                 for user in active_users:
                     if volume_24h_usd < user["volume_threshold"]:
                         continue
-                    if db.already_alerted(user["chat_id"], token["token_address"]):
+                    if db.already_alerted(user["chat_id"], token["token_address"], "threshold"):
                         continue
 
                     msg = format_alert(token, volume_24h_usd, marketcap_usd)
@@ -150,7 +149,7 @@ async def scan_loop():
                             user["chat_id"], msg,
                             parse_mode="HTML", disable_web_page_preview=True
                         )
-                        db.mark_alerted(user["chat_id"], token["token_address"], volume_24h_usd)
+                        db.mark_alerted(user["chat_id"], token["token_address"], volume_24h_usd, "threshold")
                         logger.info(f"Alerte: {token['name']} -> {user['chat_id']}")
                     except Exception as e:
                         logger.error(f"Erreur envoi à {user['chat_id']}: {e}")
@@ -164,11 +163,11 @@ async def scan_loop():
             await asyncio.sleep(POLLING_INTERVAL)
 
 
+# ===== SETUP =====
+
 async def post_init(application: Application):
     """Appelé par python-telegram-bot juste avant de démarrer le polling,
-    dans la même boucle asyncio qu'il gère lui-même. On y lance notre
-    tâche de fond au lieu d'utiliser asyncio.run() (qui créait un conflit
-    de boucle avec run_polling())."""
+    dans la même boucle asyncio qu'il gère lui-même."""
     application.create_task(scan_loop())
     logger.info("Scan loop programmé")
 
@@ -183,7 +182,7 @@ def main():
     app.add_handler(CommandHandler("stop", stop_cmd))
 
     logger.info("Bot polling démarré")
-    app.run_polling()  # gère sa propre boucle asyncio, ne pas wrapper dans asyncio.run()
+    app.run_polling()
 
 
 if __name__ == "__main__":
