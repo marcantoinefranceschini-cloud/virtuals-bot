@@ -39,6 +39,7 @@ def fetch_new_agents():
                 "volume24h_virtual": item.get("volume24h", 0) or 0,
                 "mcap_virtual": item.get("mcapInVirtual", 0) or 0,
                 "status": status,
+                "created_at": item.get("createdAt"),  # vraie date de lancement, format ISO UTC
             })
 
         logger.info(f"Virtuals: {len(tokens)} tokens récupérés")
